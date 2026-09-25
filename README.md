@@ -18,6 +18,13 @@ Cast from the pier, or dive underwater with a speargun, manage your breath hold,
 
 ## Features
 
+**Spearfishing & Freediving**
+- **Speargun Ballistics & Line Tension:** Aim and fire your speargun underwater (Left Mouse). When a fish is struck, fight and retrieve it with the shooting line (Right Mouse), feathering the line pressure gauge within the sweet spot so the spear doesn't tear free or snap.
+- **Freediving Breath Hold & Oxygen Dial:** Realistic 4-minute lung capacity simulation. A dedicated oxygen dial sits under your depth gauge: green safe zone for the first 2/3, amber caution for 1/6, and flashing red alert for the final 1/6. Break the surface to breathe and replenish your lungs.
+- **Deployable Dive Float & Catch Staging:** Dive with a high-visibility surface float trailing your dive flag. The float holds up to 15 kg of speared fish. Store your catch directly on the float while working the reef, then return to the boat or beach to transfer your float's harvest into the main cooler for multi-dive trips.
+- **Shark Defense:** Blood and struggling fish in the water draw hungry reef sharks. Poke approaching sharks with the speargun tip to fend them off and defend your catch.
+- **Rocky Bombies & New Zealand Reef Species:** Submerged haystack rock formations covered in dense seaweed and kelp forests, populated by authentic New Zealand gamefish: Snapper, Kingfish, Tarakihi, Trevally, and offshore Tuna.
+
 **Fishing**
 - A spinning rod and reel that cast, reel and bend under load, with the bail, rotor and crank animated.
 - Bites that depend on the water (shallows, pier, reef, bay, deep water), depth and time of day, across
@@ -77,11 +84,11 @@ Cast from the pier, or dive underwater with a speargun, manage your breath hold,
 | Shift | Sprint / boat boost |
 | Space | Jump / swim up |
 | C | Crouch / dive |
-| E | Interact: board the boat, take or leave the helm, step ashore, trade with the fish buyer or the chandlery |
+| E | Interact: board the boat, take or leave the helm, step ashore, store fish in float / cooler, trade |
 | V | Boat camera at the helm (1st / 3rd person) |
 | R | Take out / put away the fishing rod |
-| Left mouse | Hold to wind up, release to cast · strike when a fish takes the bait · hold to reel |
-| Right mouse | Reel an empty line in |
+| Left mouse | Cast fishing rod / Strike / Reel · (Underwater) Shoot speargun / Poke shark |
+| Right mouse | Reel empty fishing line · (Underwater) Retrieve speargun line with tension control |
 | I or Tab | Cooler / fish hold and the fish log |
 | F | Free camera |
 | L | Flashlight |
@@ -90,6 +97,14 @@ Cast from the pier, or dive underwater with a speargun, manage your breath hold,
 | H | Settings panel |
 | P | Photo mode |
 | F1 or ? | All controls |
+
+### Spearfishing & Freediving
+
+Jump into the water to dive. When submerged, your speargun is drawn and your 4-minute oxygen dial appears under the depth gauge.
+* **Shooting & Retrieving:** Aim and press **Left Mouse** to fire the spear. Once hit, hold **Right Mouse** to reel the fish in on the shooting line—watch the tension bar and feather the pressure so the spear doesn't pull free.
+* **Shark Encounters:** If sharks zero in on you or your catch, swim towards them and press **Left Mouse** to jab them with the spear tip; they will veer away in panic.
+* **Dive Float Storage:** Your high-visibility dive float deploys at the surface. After landing a fish, swim to your float and press **E** to clip up to 15 kg of fish to it.
+* **Cooler Transfer:** Swim back to the boat or shoreline with your loaded float, hop aboard, and press **E** to deposit your catch into the main cooler so you can dive again!
 
 ### Fishing
 
