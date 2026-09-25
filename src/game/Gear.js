@@ -21,6 +21,22 @@ export const UPGRADES = {
 		{ cost: 75, label: '7 ft graphite rod', castM: 32 },
 		{ cost: 260, label: '9 ft surf rod', castM: 45 },
 	] },
+	// spearfishing gear
+	speargun: { name: 'Speargun', levels: [
+		{ cost: 0, label: '75cm Reef Gun', rangeM: 4.8, spearVel: 27 },
+		{ cost: 160, label: '90cm Teak Double-Band', rangeM: 6.0, spearVel: 33 },
+		{ cost: 480, label: '115cm Carbon Roller Gun', rangeM: 7.5, spearVel: 39 },
+	] },
+	wetsuit: { name: 'Wetsuit', levels: [
+		{ cost: 0, label: 'Basic Rashguard', breathSec: 240, stealthBonus: 0 },
+		{ cost: 110, label: '3mm Neoprene Wetsuit', breathSec: 300, stealthBonus: 0.25 },
+		{ cost: 350, label: 'Open-Cell Reef Camo Wetsuit', breathSec: 360, stealthBonus: 0.5 },
+	] },
+	fins: { name: 'Dive Fins', levels: [
+		{ cost: 0, label: 'Short Snorkel Fins', swimSpeedMul: 1.0 },
+		{ cost: 95, label: 'Polymer Long Fins', swimSpeedMul: 1.25 },
+		{ cost: 280, label: 'Carbon Fiber Blade Fins', swimSpeedMul: 1.55 },
+	] },
 	// boat
 	hold: { name: 'Fish hold', levels: [
 		{ cost: 0, label: 'Cooler', holdKg: 30 },

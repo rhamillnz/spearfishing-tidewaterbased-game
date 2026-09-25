@@ -27,8 +27,8 @@ export const GPU = {
 
 	async init( { canvas = null, requiredLimits = {}, headless = false } = {} ) {
 
-		if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
-		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
+		let adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
+		if ( ! adapter ) adapter = await navigator.gpu.requestAdapter();
 		if ( ! adapter ) throw new Error( 'No WebGPU adapter found.' );
 		this.adapter = adapter;
 

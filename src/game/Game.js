@@ -5,6 +5,7 @@ import { habitatAt, pickSpecies, rollWeight, biteDelay } from './Bites.js';
 import { CatchMinigame } from './CatchMinigame.js';
 import { GameState } from './GameState.js';
 import { FishingRod } from './FishingRod.js';
+import { Speargun } from './Speargun.js';
 import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
@@ -12,17 +13,21 @@ import { UPGRADES, fuelBurn } from './Gear.js';
 import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
+import { Bombies } from '../world/Bombies.js';
+import { DiveFloat } from '../world/DiveFloat.js';
+import { Shark } from '../world/Shark.js';
 
 // how long the catch card stays up unless dismissed (ms)
 const CATCH_CARD_MS = 9000;
 
 // The fishing game on top of the world:
-//   R          take out / put away the rod (on foot, on the pier, on the boat's deck)
-//   hold LMB   wind up, release to cast (hold longer = farther)
-//   LMB        strike when a fish takes the bobber ("!"); then hold LMB to reel, let go to ease off
-//   RMB        reel an empty line back in
-//   I / Tab    cooler / hold contents and the fish log
-//   E          at the fish stand: sell your catch
+//   R          take out / put away the rod or speargun
+//   1 / 2      switch between Fishing Rod and Speargun
+//   hold RMB   aim speargun down sights
+//   LMB        shoot spear / strike rod
+//   Q          spear poke (fend off sharks, close fish jab)
+//   E          stash fish in dive float or sell at fish stand
+//   I / Tab    cooler / hold contents and the spearfisher's field guide
 export class Game {
 
 	constructor( app ) {
@@ -32,6 +37,55 @@ export class Game {
 		this.state.load();
 		this.rod = new FishingRod( { scene: app.scene, camera: app.camera, query: app.query, terrain: app.terrainData, audio: app.audio } );
 		this.rod.onLand = ( where ) => this.onBobberLanded( where );
+		this.speargun = new Speargun( { scene: app.scene, camera: app.camera, query: app.query, terrain: app.terrainData, audio: app.audio } );
+		this.weapon = 'speargun';
+		this.heldSpearFish = null; // { species, kg, name } when retrieved to diver's hands/stringer
+		this._sharkWarningT = 0;
+		this.breath = 240; // 4 minutes base breath hold
+		this.maxBreath = 240;
+		this.blackoutT = 0;
+		this._breathWarned = false;
+		this._wasInWater = false;
+		this._cardT = 0;
+
+		// Spearfishing world entities: Underwater Bombies (rock cover), Dive Float ("Floating Locker"), and Reef Sharks
+		this.bombies = new Bombies( { scene: app.scene, terrain: app.terrainData } );
+		this.diveFloat = new DiveFloat( { scene: app.scene, query: app.query } );
+		this.sharks = [
+			new Shark( { scene: app.scene, terrain: app.terrainData, index: 0, homePos: new Vector3( 25, - 8, - 65 ) } ),
+			new Shark( { scene: app.scene, terrain: app.terrainData, index: 1, homePos: new Vector3( 60, - 12, - 110 ) } ),
+		];
+
+		this.speargun.onFishHit = ( hit ) => {
+
+			const fData = FISH[ hit.speciesKey ] || FISH.yellowtail;
+			const [ a, b ] = fData.lw;
+			const lenCm = ( hit.lengthM || 0.45 ) * 100;
+			const calcKg = Math.max( fData.kg[ 0 ], Math.min( fData.kg[ 1 ] * 1.35, ( a * Math.pow( lenCm, b ) ) / 1000 ) );
+			const dist = this.speargun.spearPos.distanceTo( this.speargun.muzzlePos );
+
+			// Start CatchMinigame with tension feathering bar for speargun!
+			this.fight = new CatchMinigame( {
+				species: hit.speciesKey,
+				kg: calcKg,
+				lineKg: 35,
+				reelSpeed: 2.2,
+				distance: Math.max( 2.5, dist )
+			} );
+			this.fight._isSpeargun = true;
+			this.fight._spearedHit = hit;
+
+			this.toast( `Fish on line! Hold LMB to pull line · Keep tension in green band!`, 2800 );
+			if ( this.app.audio && this.app.audio.fishSplash ) this.app.audio.fishSplash( this.speargun.spearPos, 0.6 );
+
+		};
+
+		this.speargun.onPokeShark = () => {
+
+			this.toast( 'Shark poked on the snout! Repelled!', 2200 );
+
+		};
+
 		this.stand = new FishStand( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders } );
 		this.display = new CatchDisplay( { scene: app.scene, stall: this.stand.iceFish() } );
 		this.landing = null; // { species, kg } while the caught fish swings in view
@@ -62,6 +116,9 @@ export class Game {
 
 		const g = this.state.stats;
 		this.rod.setGear( { castM: g.castM, reelSpeed: g.reelSpeed } );
+		if ( this.speargun ) this.speargun.setGear( { rangeM: g.rangeM, spearVel: g.spearVel } );
+		if ( this.app.player ) this.app.player.swimSpeedMul = g.swimSpeedMul || 1.0;
+		if ( g.breathSec ) this.maxBreath = g.breathSec;
 		const b = this.app.boatCtl;
 		if ( b && this._engineBase ) {
 
@@ -138,10 +195,17 @@ export class Game {
 
 	}
 
+	get canSpear() {
+
+		const app = this.app, p = app.player;
+		return ! app.freeCam && ( p.mode === 'swim' || p.mode === 'walk' || p.mode === 'deck' ) && ! ( app.ui && app.ui.ui && app.ui.ui._photo );
+
+	}
+
 	// ---- per frame (after the player / camera update)
 	update( dt ) {
 
-		const app = this.app, p = app.player, inp = app.input, rod = this.rod;
+		const app = this.app, p = app.player, inp = app.input, rod = this.rod, speargun = this.speargun;
 		this._cardDismissed = false;
 		if ( ! this.hud && app.ui && app.ui.ui && typeof document !== 'undefined' && document.head ) {
 
@@ -155,11 +219,83 @@ export class Game {
 		}
 
 		const can = this.canFish;
-		if ( inp.hit( 'KeyR' ) && can && ! this.fight ) {
+		const canSpear = this.canSpear;
 
-			rod.equip( ! rod.equipped );
-			if ( ! rod.equipped ) this.cancelLine();
-			this.toast( rod.equipped ? 'Rod out · hold left mouse to cast' : 'Rod away', 1600 );
+		// Weapon selection hotkeys: 1 for Rod, 2 for Speargun
+		if ( inp.hit( 'Digit1' ) ) {
+
+			if ( this.weapon !== 'rod' ) {
+
+				speargun.equip( false );
+				this.weapon = 'rod';
+				if ( can ) {
+
+					rod.equip( true );
+					this.toast( 'Fishing Rod equipped · [2] Speargun', 1600 );
+
+				} else {
+
+					this.toast( 'Fishing Rod selected (cannot fish while swimming)', 2000 );
+					this.weapon = 'speargun';
+					speargun.equip( true );
+
+				}
+
+			}
+
+		} else if ( inp.hit( 'Digit2' ) ) {
+
+			if ( this.weapon !== 'speargun' ) {
+
+				this.cancelLine( true );
+				rod.equip( false );
+				this.weapon = 'speargun';
+				speargun.equip( true );
+				this.toast( 'Speargun equipped · [1] Fishing Rod', 1600 );
+
+			}
+
+		}
+
+		// When entering swim mode, automatically switch to speargun and notify about dive float
+		if ( p.mode === 'swim' && ! this._wasInWater ) {
+
+			if ( this.weapon === 'rod' ) {
+
+				this.cancelLine( true );
+				rod.equip( false );
+				this.weapon = 'speargun';
+				speargun.equip( true );
+
+			}
+			this.toast( '🛟 Dive Float deployed! Swim to it and press [E] to stash your catch.', 4500 );
+
+		}
+		this._wasInWater = ( p.mode === 'swim' );
+
+		// KeyR toggles the current weapon, or retrieves spear if it was fired
+		if ( inp.hit( 'KeyR' ) && ! ( this.hud && ( this.hud.invOpen || this.hud.standOpen ) ) ) {
+
+			if ( this.weapon === 'speargun' && canSpear ) {
+
+				if ( speargun.state === 'spearOut' ) {
+
+					speargun.retrieve();
+
+				} else {
+
+					speargun.equip( ! speargun.equipped );
+					this.toast( speargun.equipped ? 'Speargun ready · Hold RMB to aim, LMB to shoot' : 'Speargun stowed', 1800 );
+
+				}
+
+			} else if ( this.weapon === 'rod' && can && ! this.fight ) {
+
+				rod.equip( ! rod.equipped );
+				if ( ! rod.equipped ) this.cancelLine();
+				this.toast( rod.equipped ? 'Rod out · hold left mouse to cast' : 'Rod away', 1600 );
+
+			}
 
 		}
 
@@ -168,6 +304,12 @@ export class Game {
 			// swimming, driving, free camera: the line comes in and the rod goes away
 			this.cancelLine( true );
 			rod.equip( false );
+
+		}
+
+		if ( ! canSpear && speargun.equipped ) {
+
+			speargun.equip( false );
 
 		}
 
@@ -186,7 +328,7 @@ export class Game {
 		this._rmb = rmb;
 		const panelOpen = this.hud && ( this.hud.invOpen || this.hud.standOpen );
 
-		if ( rod.equipped && ! panelOpen ) {
+		if ( this.weapon === 'rod' && rod.equipped && ! panelOpen ) {
 
 			if ( rod.state === 'idle' && lDown ) rod.startWindup();
 			else if ( rod.state === 'windup' && lUp ) rod.release();
@@ -202,6 +344,28 @@ export class Game {
 
 			} else if ( rod.state === 'flying' && rDown ) rod.retrieve();
 
+		} else if ( this.weapon === 'speargun' && speargun.equipped && ! panelOpen ) {
+
+			// Q key: Spear Poke (repel sharks / close jab)
+			if ( inp.hit( 'KeyQ' ) && ! this.fight ) {
+
+				speargun.poke( this.sharks, app.reef?.fish );
+
+			} else if ( speargun.state === 'spearOut' && ! this.fight ) {
+
+				// Spear in water: RMB or R retrieves it
+				if ( rDown ) speargun.retrieve();
+
+			} else if ( speargun.loaded && ! this.fight ) {
+
+				if ( lDown ) {
+
+					speargun.fire();
+
+				}
+
+			}
+
 		}
 
 		// bites and the fight
@@ -209,7 +373,158 @@ export class Game {
 		else if ( ! this.fight ) rod.dip = Math.max( 0, rod.dip - dt * 4 );
 		if ( this.fight ) this.updateFight( dt, lmb && ! panelOpen );
 
-		rod.update( dt, { visible: can, fight: this.fight } );
+		rod.update( dt, { visible: can && this.weapon === 'rod', fight: this.fight } );
+		speargun.update( dt, { visible: canSpear && this.weapon === 'speargun', aiming: rmb && speargun.equipped && ! panelOpen, fishSchools: app.reef?.fish } );
+
+		// ---- Oxygen / Breath Hold & Blackout Simulation
+		const isSubmerged = ( p.mode === 'swim' ) && ( ! p.floating || app.camera.position.y < p.waterH - 0.05 );
+		if ( isSubmerged ) {
+
+			this.breath = Math.max( 0, this.breath - dt );
+			if ( this.breath <= 0 && this.blackoutT <= 0 ) {
+
+				// Shallow water blackout!
+				this.blackoutT = 3.2;
+				this.toast( '⚠️ Blackout! You ran out of oxygen and passed out! Floating to surface...', 4000 );
+				if ( this.heldSpearFish ) {
+
+					this.toast( `Dropped ${ this.heldSpearFish.name } during the blackout!`, 3500 );
+					this.heldSpearFish = null;
+
+				}
+				// Float player to surface
+				p.floating = true;
+				p.position.y = p.waterH - 0.15;
+				p.velocity.set( 0, 0, 0 );
+
+			} else if ( this.breath <= 30 && ! this._breathWarned ) {
+
+				this._breathWarned = true;
+				this.toast( '⚠️ Low oxygen! 30s remaining · Head for the surface!', 3000 );
+
+			}
+
+		} else {
+
+			// Surfaced or out of water: recover breath quickly (~5-6s full recovery)
+			this.breath = Math.min( this.maxBreath, this.breath + dt * ( this.maxBreath / 5 ) );
+			if ( this.breath > 45 ) this._breathWarned = false;
+
+		}
+
+		if ( this.blackoutT > 0 ) {
+
+			this.blackoutT = Math.max( 0, this.blackoutT - dt );
+			p.floating = true;
+			p.position.y = Math.max( p.position.y, p.waterH - 0.15 );
+			p.velocity.set( 0, 0, 0 );
+
+		}
+
+		// ---- Spearfishing Systems: Dive Float, Bombies Cover, and Shark AI
+		this.diveFloat.update( dt, p.position, p.mode === 'swim', p.waterH );
+
+		const bombieCover = ( p.mode === 'swim' ) ? this.bombies.checkCover( p.position ) : null;
+		if ( app.reef && app.reef.fish ) {
+
+			app.reef.fish.stealthCover = !! bombieCover;
+
+		}
+
+		const hasFishInWater = ( p.mode === 'swim' ) && ( !! this.heldSpearFish || !! speargun.spearedFish );
+		for ( const shark of this.sharks ) {
+
+			shark.update( dt, { playerPos: p.position, playerInWater: p.mode === 'swim', spearedFish: hasFishInWater } );
+			if ( p.mode === 'swim' && hasFishInWater && shark.state === 'stalk' ) {
+
+				const d = shark.position.distanceTo( p.position );
+				if ( d < 2.0 ) {
+
+					// Shark snatches fish!
+					shark.snatch();
+					if ( this.heldSpearFish ) {
+
+						this.toast( 'A Bronze Whaler snatched your fish! Fend them off next time with [Q]!', 3500 );
+						this.heldSpearFish = null;
+
+					} else if ( speargun.spearedFish ) {
+
+						this.toast( 'A Bronze Whaler snatched the fish off your spear shaft!', 3500 );
+						speargun.spearedFish = null;
+						if ( app.reef?.fish ) app.reef.fish.releaseImpaledFish();
+						speargun.retrieve();
+
+					}
+
+				} else if ( d < 10.0 && this._sharkWarningT <= 0 ) {
+
+					this._sharkWarningT = 4.5;
+					this.toast( 'Shark circling close! Poke it with [Q] to fend it off!', 2500 );
+
+				}
+
+			}
+
+		}
+		if ( this._sharkWarningT > 0 ) this._sharkWarningT -= dt;
+
+		// Stash speared fish into Dive Float (or aboard Boat / on land into cooler)
+		const nearFloat = ( p.mode === 'swim' ) && ( p.position.distanceTo( this.diveFloat.position ) < 3.5 );
+		const onBoatOrDeck = ( p.mode === 'deck' || p.mode === 'boat' );
+		const onLand = ( p.mode === 'walk' );
+		const canStash = this.heldSpearFish && ( nearFloat || onBoatOrDeck || onLand );
+
+		if ( canStash && inp.hit( 'KeyE' ) && ! panelOpen && ! this._cardDismissed ) {
+
+			const fish = this.heldSpearFish;
+			if ( nearFloat ) {
+
+				if ( ! this.diveFloat.fits( fish.kg ) ) {
+
+					this.toast( `⚠️ Dive Float is full (${ this.diveFloat.totalKg.toFixed( 1 ) } / ${ this.diveFloat.maxKg } kg)! Return to boat or shore to transfer fish to cooler.`, 4000 );
+
+				} else {
+
+					this.heldSpearFish = null;
+					const logged = this.state.recordCatch( fish.species, fish.kg, this.hour );
+					this.diveFloat.stash( logged );
+					const info = this.state.lastCatch;
+					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
+					this.toast( `Stashed ${ fish.name } in Dive Float (${ this.diveFloat.totalKg.toFixed( 1 ) } / ${ this.diveFloat.maxKg } kg)!`, 3500 );
+					if ( app.audio && app.audio.fishFlop ) app.audio.fishFlop();
+
+				}
+
+			} else if ( onBoatOrDeck || onLand ) {
+
+				if ( ! this.state.fits( fish.kg ) ) {
+
+					this.toast( `⚠️ Cooler is full (${ this.state.holdKg.toFixed( 1 ) } / ${ this.state.stats.holdKg } kg)! Sell fish at Joe's pier stall to free space.`, 4000 );
+
+				} else {
+
+					this.heldSpearFish = null;
+					const entry = this.state.addFish( fish.species, fish.kg, this.hour );
+					const info = this.state.lastCatch;
+					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
+					else if ( entry ) this.toast( `Stashed ${ fish.name } in Cooler (${ this.state.holdKg.toFixed( 1 ) } / ${ this.state.stats.holdKg } kg)!`, 3500 );
+					if ( app.audio && app.audio.fishFlop ) app.audio.fishFlop();
+
+				}
+
+			}
+
+		}
+
+		// Transfer fish from Dive Float into Boat Cooler / Hold
+		const hasFloatFish = this.diveFloat && this.diveFloat.stashedFish.length > 0;
+		const canTransferFloat = ( onBoatOrDeck || onLand ) && hasFloatFish && ! this.heldSpearFish;
+		if ( canTransferFloat && inp.hit( 'KeyE' ) && ! panelOpen && ! this._cardDismissed ) {
+
+			this.transferFloatToCooler();
+
+		}
+
 		// the landed fish hangs on the end of the line, turned to face you, then goes in the cooler. With
 		// the HUD the catch card comes up once the fish has swung in, and the fish stays (slowly turning)
 		// until the card is dismissed (click, E, Esc) or times out.
@@ -255,6 +570,30 @@ export class Game {
 
 		} else if ( this.landing || this.display.shown ) this.endLanding();
 
+		// Universal Catch Card dismissal (works for spearfishing, diving, boat, or rod)
+		if ( this.hud && this.hud.catchOpen ) {
+
+			this._cardT = ( this._cardT || 0 ) + dt;
+			if ( this._cardT > 0.25 ) {
+
+				if ( lDown || rDown || inp.hit( 'KeyE' ) || inp.hit( 'Escape' ) || inp.hit( 'Space' ) || this._cardT > CATCH_CARD_MS / 1000 ) {
+
+					this._cardDismissed = true;
+					this._cardT = 0;
+					this.hud.hideCatch();
+					if ( this.landing ) this.endLanding();
+
+				}
+
+			}
+
+		} else {
+
+			this._cardT = 0;
+			if ( ! inp.is( 'KeyE' ) && ! inp.is( 'Mouse0' ) ) this._cardDismissed = false;
+
+		}
+
 		p.busy = rod.lineInWater || rod.state === 'windup';
 
 		this.updateBoat( dt );
@@ -263,12 +602,23 @@ export class Game {
 		for ( const v of this.vendors ) v.update( dt, p.mode === 'walk' ? p.position : null );
 		this.updateVendors( inp, p );
 
-		// prompts when the player has nothing to say
-		if ( ! p.prompt && can ) p.prompt = this.prompt();
+		// prompts when the player has nothing to say, or when holding fish / float transfer is available
+		const hasFloatTransfer = ( p.mode === 'deck' || p.mode === 'boat' || p.mode === 'walk' ) && this.diveFloat && this.diveFloat.stashedFish.length > 0;
+		if ( this.heldSpearFish || hasFloatTransfer ) {
+
+			p.prompt = this.prompt();
+
+		} else if ( ! p.prompt && ( can || canSpear ) ) {
+
+			p.prompt = this.prompt();
+
+		}
 
 		const aboard = p.mode === 'boat' || p.mode === 'deck';
 		// the catch card's live fish portrait (or one queued thumbnail)
 		if ( this.hud && this.hud.portrait ) this.hud.portrait.update( dt );
+		const inWater = ( p.mode === 'swim' );
+		const floatDist = inWater ? p.position.distanceTo( this.diveFloat.position ) : null;
 		if ( this.hud ) this.hud.update( {
 			fuel: aboard ? { litres: this.state.fuelL, tank: this.state.stats.fuelL } : null,
 			sonar: aboard && this.state.stats.finder ? this._sonar : null,
@@ -276,7 +626,15 @@ export class Game {
 			casting: rod.state === 'windup',
 			power: rod.power,
 			bite: this.bite && this.bite.phase === 'take',
-			aiming: rod.equipped,
+			aiming: ( this.weapon === 'rod' && rod.equipped ) || ( this.weapon === 'speargun' && speargun.equipped ),
+			breath: this.breath,
+			maxBreath: this.maxBreath,
+			blackout: this.blackoutT > 0,
+			heldFish: this.heldSpearFish,
+			floatDist: floatDist,
+			floatKg: this.diveFloat ? this.diveFloat.totalKg : 0,
+			floatMaxKg: this.diveFloat ? this.diveFloat.maxKg : 15,
+			inWater: inWater,
 		} );
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
@@ -285,12 +643,110 @@ export class Game {
 
 	prompt() {
 
-		const rod = this.rod, p = this.app.player;
+		const rod = this.rod, speargun = this.speargun, p = this.app.player;
+
+		if ( this.fight ) {
+
+			const f = this.fight;
+			if ( f._isSpeargun ) {
+
+				if ( f.tension > f.band[ 1 ] ) {
+
+					return { key: 'LMB', text: '⚠️ Too much tension! Release LMB to ease off!' };
+
+				} else if ( f.tension < f.band[ 0 ] ) {
+
+					return { key: 'LMB', text: 'Hold LMB to pull shooting line · Keep in green band!' };
+
+				} else {
+
+					return { key: 'LMB', text: 'Good tension! Keep holding LMB to reel fish in' };
+
+				}
+
+			} else {
+
+				return f.tension > f.band[ 1 ]
+					? { key: 'LMB', text: 'Too much tension · let go!' }
+					: { key: 'LMB', text: 'Hold to reel · let go when the tension goes red' };
+
+			}
+
+		}
+
+		if ( this.heldSpearFish ) {
+
+			const nearFloat = ( p.mode === 'swim' ) && ( p.position.distanceTo( this.diveFloat.position ) < 3.5 );
+			const onBoatOrDeck = ( p.mode === 'deck' || p.mode === 'boat' );
+			const onLand = ( p.mode === 'walk' );
+			if ( nearFloat ) {
+
+				return { key: 'E', text: `Stash ${ this.heldSpearFish.name } in Dive Float (${ this.diveFloat.totalKg.toFixed( 1 ) } / ${ this.diveFloat.maxKg } kg)` };
+
+			}
+			if ( onBoatOrDeck ) {
+
+				return { key: 'E', text: `Stash ${ this.heldSpearFish.name } in Boat Cooler` };
+
+			}
+			if ( onLand ) {
+
+				return { key: 'E', text: `Stash ${ this.heldSpearFish.name } in Cooler` };
+
+			}
+
+			const dist = p.position.distanceTo( this.diveFloat.position ).toFixed( 1 );
+			return { text: `Swim to Dive Float (${ dist }m) or Boat to stash ${ this.heldSpearFish.name }! Watch for sharks!` };
+
+		}
+
+		// Offer float transfer if diver boarded boat or walked ashore with fish in float
+		if ( ( p.mode === 'deck' || p.mode === 'boat' || p.mode === 'walk' ) && this.diveFloat && this.diveFloat.stashedFish.length > 0 ) {
+
+			const target = ( p.mode === 'deck' || p.mode === 'boat' ) ? 'Boat Cooler' : 'Cooler';
+			return { key: 'E', text: `Transfer ${ this.diveFloat.totalKg.toFixed( 1 ) } kg fish from Dive Float to ${ target }` };
+
+		}
+
+		const cover = ( p.mode === 'swim' ) ? this.bombies.checkCover( p.position ) : null;
+		const coverTag = cover ? `   ·   🪨 In Cover: ${ cover.name }` : '';
+		const floatTag = ( p.mode === 'swim' ) ? `   ·   🛟 Float deployed: [E] stash (${ this.diveFloat.totalKg.toFixed( 1 ) }/15kg)` : '';
+
+		if ( this.weapon === 'speargun' ) {
+
+			if ( ! speargun.equipped ) {
+
+				return { key: 'R', text: 'Take out speargun   ·   1  Fishing rod' + coverTag };
+
+			}
+
+			if ( speargun.state === 'spearOut' ) {
+
+				return { key: 'RMB', text: 'Retrieve spear & reload' + ( ( p.mode === 'swim' ) ? '   ·   🛟 Float deployed (stash with [E])' : '' ) };
+
+			}
+
+			if ( speargun.state === 'reloading' ) {
+
+				return { text: 'Loading spear and cocking bands...' + ( ( p.mode === 'swim' ) ? '   ·   🛟 Float deployed' : '' ) };
+
+			}
+
+			if ( speargun.aiming ) {
+
+				return { key: 'LMB', text: 'Shoot spear   ·   Release RMB to lower' + floatTag + coverTag };
+
+			}
+
+			return { key: 'LMB', text: 'Shoot spear   ·   Hold RMB: Aim   ·   Q: Spear poke' + floatTag + coverTag };
+
+		}
+
 		if ( ! rod.equipped ) {
 
 			// by the water (boat deck, pier, the wet beach, wading): suggest the rod
 			const byWater = p.mode === 'deck' || ( p.mode === 'walk' && [ 'wood', 'wetsand', 'water' ].includes( p.surface ) );
-			return byWater ? { key: 'R', text: 'Take out the rod' } : null;
+			return byWater ? { key: 'R', text: 'Take out the rod   ·   2  Speargun' } : null;
 
 		}
 
@@ -305,9 +761,6 @@ export class Game {
 				if ( b && b.phase === 'nibble' ) return { key: '…', text: 'Something\'s nibbling · wait until the bobber is pulled under' };
 				return { key: 'RMB', text: 'Waiting for a bite · right-click to reel the line in' };
 			case 'retrieving': return { key: 'RMB', text: 'Reeling in' };
-			case 'fighting': return this.fight && this.fight.tension > this.fight.band[ 1 ]
-				? { key: 'LMB', text: 'Too much tension · let go!' }
-				: { key: 'LMB', text: 'Hold to reel · let go when the tension goes red' };
 			case 'landing': return null;
 			default: return null;
 
@@ -369,6 +822,52 @@ export class Game {
 
 			} else if ( hud.standOpen ) hud.closeStand();
 			else hud.openStand( near );
+
+		}
+
+	}
+
+	transferFloatToCooler() {
+
+		if ( ! this.diveFloat || ! this.diveFloat.stashedFish.length ) return;
+		const stashed = this.diveFloat.empty();
+		let transferred = 0;
+		let transferredKg = 0;
+		const leftover = [];
+		for ( const f of stashed ) {
+
+			if ( this.state.storeFish( f ) ) {
+
+				transferred ++;
+				transferredKg += f.kg;
+
+			} else {
+
+				leftover.push( f );
+
+			}
+
+		}
+		for ( const f of leftover ) this.diveFloat.stash( f );
+
+		if ( transferred > 0 ) {
+
+			if ( this.app.audio && this.app.audio.fishFlop ) this.app.audio.fishFlop();
+			const onBoat = ( this.app.player.mode === 'deck' || this.app.player.mode === 'boat' );
+			const target = onBoat ? 'Boat Cooler' : 'Cooler';
+			if ( leftover.length === 0 ) {
+
+				this.toast( `✅ Transferred ${ transferred } fish (${ transferredKg.toFixed( 1 ) } kg) from Float into ${ target }! Float emptied (0 / 15 kg).`, 4200 );
+
+			} else {
+
+				this.toast( `⚠️ Cooler full! Transferred ${ transferred } fish (${ transferredKg.toFixed( 1 ) } kg). ${ leftover.length } fish remain in Float. Sell catch to free space!`, 4500 );
+
+			}
+
+		} else {
+
+			this.toast( `⚠️ Cooler is full (${ this.state.holdKg.toFixed( 1 ) } / ${ this.state.stats.holdKg } kg)! Sell fish at Joe's pier stall to store more.`, 4000 );
 
 		}
 
@@ -507,8 +1006,75 @@ export class Game {
 
 		const f = this.fight;
 		const st = f.update( dt, reeling );
-		// the fish thrashes at the surface as each run starts
 		const au = this.app.audio;
+
+		if ( f._isSpeargun ) {
+
+			// Speargun line retrieval physics: pull spear toward speargun muzzle as distance reduces
+			const muzzle = this.speargun.muzzlePos;
+			this._tmp.copy( this.speargun.spearPos ).sub( muzzle );
+			if ( this._tmp.lengthSq() > 1e-4 ) {
+
+				this.speargun.spearPos.copy( muzzle ).addScaledVector( this._tmp.normalize(), f.distance );
+				this.speargun.spearQuat.setFromUnitVectors( new Vector3( 0, 1, 0 ), this._tmp );
+
+			}
+			if ( this.app.reef?.fish ) this.app.reef.fish.updateImpaledFish( this.speargun.spearPos, dt );
+
+			// Thrashing splash
+			if ( f.surge > 0.6 && ! f._splashed && au && au.fishSplash ) au.fishSplash( this.speargun.spearPos, 0.3 + 0.5 * Math.min( 1, f.kg / 8 ) );
+			f._splashed = f.surge > 0.6 ? true : f.surge < 0.3 ? false : f._splashed;
+
+			if ( st === 'fighting' ) return;
+			this.fight = null;
+			const name = FISH[ f.species ].name;
+
+			if ( st === 'caught' ) {
+
+				// Fish reeled in to diver's hands/stringer!
+				if ( au && au.fishSplash ) au.fishSplash( muzzle, 0.8 );
+				if ( au && au.fishFlop ) au.fishFlop();
+				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+				this.speargun.spearedFish = null;
+				this.speargun.reload();
+
+				if ( this.app.player.mode === 'swim' ) {
+
+					this.heldSpearFish = { species: f.species, kg: f.kg, name: name };
+					this.toast( `Landed ${ name } (${ f.kg.toFixed( 1 ) } kg)! Stash in your Dive Float [E] to secure catch!`, 4000 );
+
+				} else {
+
+					// On boat or shore: directly into cooler/hold
+					const entry = this.state.addFish( f.species, f.kg, this.hour );
+					const info = this.state.lastCatch;
+					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
+					else if ( entry ) this.toast( `${ name } · ${ entry.kg.toFixed( 2 ) } kg · $${ entry.value }`, 3600 );
+
+				}
+
+			} else if ( st === 'snapped' ) {
+
+				this.toast( 'Snap! The shooting line snapped under tension!', 2600 );
+				if ( au && au.lineSnap ) au.lineSnap();
+				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+				this.speargun.spearedFish = null;
+				this.speargun.reload();
+
+			} else {
+
+				this.toast( 'The fish tore off the spear barb and escaped!', 2400 );
+				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+				this.speargun.spearedFish = null;
+				this.speargun.retrieve();
+
+			}
+
+			return;
+
+		}
+
+		// the fish thrashes at the surface as each run starts
 		if ( f.surge > 0.6 && ! f._splashed && au && au.fishSplash ) au.fishSplash( this.rod.bobber, 0.3 + 0.5 * Math.min( 1, f.kg / 8 ) );
 		f._splashed = f.surge > 0.6 ? true : f.surge < 0.3 ? false : f._splashed;
 		if ( st === 'fighting' ) return;
@@ -562,6 +1128,13 @@ export class Game {
 	cancelLine( silent = false ) {
 
 		if ( this.fight && ! silent ) this.toast( 'Lost it', 1400 );
+		if ( this.fight && this.fight._isSpeargun ) {
+
+			if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+			if ( this.speargun.spearedFish ) this.speargun.spearedFish = null;
+			this.speargun.retrieve();
+
+		}
 		this.fight = null;
 		this.bite = null;
 		if ( this.rod.state !== 'stowed' ) this.rod.setState( this.rod.equipped ? 'idle' : 'stowed' );

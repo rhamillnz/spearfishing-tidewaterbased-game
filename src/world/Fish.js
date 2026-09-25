@@ -9,6 +9,7 @@ import { createSwimMaterial } from './fish/FishMaterial.js';
 import { bandFade } from '../materials/LODFade.js';
 import { WhaleWater } from '../ocean/WhaleWater.js';
 import { FrameUniforms } from '../engine/render/Frame.js';
+import { BOMBIE_LOCATIONS } from './Bombies.js';
 
 // Fish and other swimmers of the reef and the bay, simulated on the CPU and drawn in a single
 // render object (ReefBatch: one indirect draw per model and level of detail) with the
@@ -81,6 +82,12 @@ const BEHAVIOUR = {
 	juvenile: { model: 'jack', length: [ 0.1, 0.16 ], mode: 'escort', cruise: 1.5, max: 4, burst: 9, accel: 7, flee: 1.5, amp: 0.1, freq: [ 2.5, 1 ], ceiling: - 0.3, minDepth: 2, band: [ 0, 1e9 ] },
 	remora: { model: 'mullet', length: [ 0.35, 0.55 ], mode: 'remora', cruise: 0.5, max: 3, burst: 3, accel: 3, flee: 0, amp: 0.03, freq: [ 0.8, 0.3 ], ceiling: 5, minDepth: 0, band: [ 0, 1e9 ] },
 	pierSergeant: { model: 'sergeant', length: [ 0.12, 0.17 ], mode: 'pile', cruise: 0.6, max: 2, burst: 6, accel: 4, wAli: 0.6, wCoh: 0.6, flee: 3.2, depth: [ 0.3, 0.9 ], homeRadius: 1.2, amp: 0.09, freq: [ 2, 0.9 ], band: [ 2, 6 ] },
+	// Iconic NZ Spearfishing species
+	snapper: { model: 'redSnapper', length: [ 0.32, 0.58 ], mode: 'hover', cruise: 0.7, max: 2.2, burst: 6, accel: 4, sep: 2.0, wAli: 1.2, wCoh: 0.8, flee: 4.5, depth: [ 0.1, 0.45 ], homeRadius: 10, amp: 0.08, freq: [ 1.8, 0.9 ], band: [ 2.0, 20 ] },
+	kingfish: { model: 'yellowtail', length: [ 0.65, 1.15 ], mode: 'patrol', cruise: 1.6, max: 4.2, burst: 9, accel: 6, sep: 3.0, wAli: 1.8, wCoh: 1.0, wGoal: 1.2, flee: 6, depth: [ 0.25, 0.8 ], homeRadius: 28, amp: 0.08, freq: [ 1.8, 0.9 ], band: [ 2.5, 25 ] },
+	trevally: { model: 'jack', length: [ 0.35, 0.55 ], mode: 'school', cruise: 1.2, max: 3.0, burst: 7, accel: 4.5, sep: 2.0, wAli: 1.8, wCoh: 1.2, flee: 4.5, depth: [ 0.2, 0.7 ], homeRadius: 18, amp: 0.08, freq: [ 1.8, 0.9 ], band: [ 2.0, 20 ] },
+	tarakihi: { model: 'sergeant', length: [ 0.22, 0.35 ], mode: 'hover', cruise: 0.6, max: 2.0, burst: 5, accel: 3.5, sep: 1.8, wAli: 1.2, wCoh: 0.9, flee: 3.8, depth: [ 0.08, 0.35 ], homeRadius: 8, amp: 0.08, freq: [ 1.8, 0.9 ], band: [ 2.5, 22 ] },
+	bluefinTuna: { model: 'tuna', length: [ 0.9, 1.4 ], mode: 'patrol', cruise: 2.2, max: 5.5, burst: 12, accel: 8, sep: 4.0, wAli: 2.0, wCoh: 1.2, flee: 7, depth: [ 0.3, 0.85 ], homeRadius: 40, amp: 0.06, freq: [ 2.0, 1.0 ], band: [ 6.0, 35 ] },
 };
 for ( const k in BEHAVIOUR ) BEHAVIOUR[ k ] = { name: k, ...base, ...BEHAVIOUR[ k ] };
 
@@ -417,6 +424,35 @@ export class FishSchools {
 
 		}
 
+		// ---- Haystack Rocks & Bombies (Iconic NZ Spearfishing Schools!)
+		for ( const b of BOMBIE_LOCATIONS ) {
+
+			const bZone = { x: b.x, z: b.z, r: b.radius * 2.2 + 8, band: [ 1.8, 28 ] };
+			// 1. NZ Snapper (Tāmure) around kelp and rocky gutters
+			this.addGroup( 'snapper', 8 + Math.floor( this.rng() * 6 ), bZone );
+			// 2. Tarakihi schooling near the rock face
+			this.addGroup( 'tarakihi', 10 + Math.floor( this.rng() * 8 ), bZone );
+			// 3. Silver Trevally (Araara) circling mid-depths
+			this.addGroup( 'trevally', 7 + Math.floor( this.rng() * 5 ), bZone );
+			// 4. Yellowtail Kingfish (Kahu) patrolling crowns of outer / deeper haystack rocks
+			if ( b.height > 8.0 || b.z > 60 ) {
+
+				this.addGroup( 'kingfish', 3 + Math.floor( this.rng() * 3 ), { ...bZone, r: b.radius * 3.0 + 12 } );
+
+			}
+			// 5. Blue Cod (Rāwaru) resting in the kelp
+			this.addGroup( 'grunt', 6 + Math.floor( this.rng() * 4 ), bZone );
+			// 6. Butterfish / Greenbone grazing in the weed
+			this.addGroup( 'wrasse', 5 + Math.floor( this.rng() * 4 ), bZone );
+
+		}
+
+		// Deep outer drop-offs: Southern Bluefin Tuna!
+		const tunaZone1 = { x: 26, z: 168, r: 45, band: [ 6, 35 ] };
+		const tunaZone2 = { x: - 16, z: 136, r: 40, band: [ 6, 35 ] };
+		this.addGroup( 'bluefinTuna', 5, tunaZone1 );
+		this.addGroup( 'bluefinTuna', 4, tunaZone2 );
+
 	}
 
 	// The humpback (world/marine/Whale.js): its escort follows the posed body.
@@ -641,7 +677,12 @@ export class FishSchools {
 		let threat = null;
 		if ( player ) {
 
-			if ( player.y < - 0.1 ) threat = player;
+			if ( this.stealthCover ) {
+
+				// Spearfisher in cover behind a bombie: fish do not spook unless right on top of them
+				threat = null;
+
+			} else if ( player.y < - 0.1 ) threat = player;
 			else {
 
 				const ground = this.terrain.heightAt( player.x, player.z );
@@ -1536,6 +1577,110 @@ export class FishSchools {
 
 		batch.commit();
 		batch.dataAttr.needsUpdate = true;
+
+	}
+
+	// Check if a spear path (from spearPrev to spearCur) hit any swimming fish
+	checkSpearHit( spearPos, spearPrevPos, hitRadius = 0.32 ) {
+
+		const P = this.pos;
+		const vx = spearPos.x - spearPrevPos.x;
+		const vy = spearPos.y - spearPrevPos.y;
+		const vz = spearPos.z - spearPrevPos.z;
+		const segLenSq = vx * vx + vy * vy + vz * vz;
+
+		for ( const g of this.groups ) {
+
+			if ( ! g.active ) continue;
+			const sp = g.sp;
+			// Skip protected species (turtle, stingray, eagleRay)
+			if ( sp.model === 'turtle' || sp.model === 'stingray' || sp.model === 'eagleRay' ) continue;
+
+			// Quick group bounding sphere check
+			const dGroupSq = ( g.center.x - spearPos.x ) ** 2 + ( g.center.y - spearPos.y ) ** 2 + ( g.center.z - spearPos.z ) ** 2;
+			if ( dGroupSq > ( g.radius + 4 ) ** 2 ) continue;
+
+			for ( let a = 0; a < g.count; a ++ ) {
+
+				const i = g.offset + a;
+				if ( this.impaled && this.impaled.index === i ) continue;
+
+				const i3 = i * 3;
+				const fx = P[ i3 ], fy = P[ i3 + 1 ], fz = P[ i3 + 2 ];
+				const fLen = this.size[ i ];
+				const r = Math.max( hitRadius, fLen * 0.42 );
+
+				let distSq = 0;
+				if ( segLenSq < 1e-5 ) {
+
+					distSq = ( fx - spearPos.x ) ** 2 + ( fy - spearPos.y ) ** 2 + ( fz - spearPos.z ) ** 2;
+
+				} else {
+
+					const t = Math.max( 0, Math.min( 1, ( ( fx - spearPrevPos.x ) * vx + ( fy - spearPrevPos.y ) * vy + ( fz - spearPrevPos.z ) * vz ) / segLenSq ) );
+					const px = spearPrevPos.x + t * vx;
+					const py = spearPrevPos.y + t * vy;
+					const pz = spearPrevPos.z + t * vz;
+					distSq = ( fx - px ) ** 2 + ( fy - py ) ** 2 + ( fz - pz ) ** 2;
+
+				}
+
+				if ( distSq < r * r ) {
+
+					// Alarm the school so nearby fish scatter from the speared fish
+					g.alarm = 6.0;
+
+					return {
+						index: i,
+						speciesKey: sp.model,
+						name: sp.name,
+						lengthM: fLen,
+						position: [ fx, fy, fz ],
+					};
+
+				}
+
+			}
+
+		}
+
+		return null;
+
+	}
+
+	impaleFish( hitInfo ) {
+
+		this.impaled = hitInfo;
+		const i3 = hitInfo.index * 3;
+		this.vel[ i3 ] = 0;
+		this.vel[ i3 + 1 ] = 0;
+		this.vel[ i3 + 2 ] = 0;
+
+	}
+
+	updateImpaledFish( spearPos, dt ) {
+
+		if ( ! this.impaled ) return;
+		const i = this.impaled.index;
+		const i3 = i * 3;
+		// Pin fish to spear shaft position
+		this.pos[ i3 ] = spearPos.x;
+		this.pos[ i3 + 1 ] = spearPos.y;
+		this.pos[ i3 + 2 ] = spearPos.z;
+		// Thrash animation
+		this.bend[ i ] = Math.sin( Date.now() * 0.03 ) * 0.45;
+		this.roll[ i ] = Math.cos( Date.now() * 0.02 ) * 0.25;
+
+	}
+
+	releaseImpaledFish() {
+
+		if ( ! this.impaled ) return;
+		const i = this.impaled.index;
+		const i3 = i * 3;
+		// Move old fish out of view
+		this.pos[ i3 + 1 ] = - 2000;
+		this.impaled = null;
 
 	}
 

@@ -37,6 +37,7 @@ const CSS = /* css */`
 .gm-mk.is-joe > i { background: var(--tw-sun); }
 .gm-mk.is-marta > i { background: var(--tw-aqua); }
 .gm-mk.is-boat > i { background: #f2efe6; }
+.gm-mk.is-float > i { background: #ff5500; color: #fff; font-size: calc(12 * var(--tw-u)); }
 .gm-mk > b { position: absolute; left: 0; top: 0; width: 0; height: 0; border-left: calc(5 * var(--tw-u)) solid transparent; border-right: calc(5 * var(--tw-u)) solid transparent;
 	border-bottom: calc(7 * var(--tw-u)) solid rgba(255,255,255,0.9); margin: calc(-19 * var(--tw-u)) 0 0 calc(-5 * var(--tw-u)); transform-origin: calc(5 * var(--tw-u)) calc(19 * var(--tw-u)); display: none; }
 .gm-mk.is-edge > b { display: block; }
@@ -134,6 +135,17 @@ export class Minimap {
 
 				const p = game.app.player;
 				return p.mode === 'boat' || p.mode === 'deck';
+
+			} },
+			{ id: 'float', ...mk( 'float', '🛟' ), pos: () => {
+
+				const df = game.diveFloat;
+				return df && df.active ? { x: df.position.x, z: df.position.z } : null;
+
+			}, hideWhen: () => {
+
+				const p = game.app.player;
+				return p.mode !== 'swim';
 
 			} },
 		];

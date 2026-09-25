@@ -1,4 +1,4 @@
-import { FISH, fishLengthCm } from './FishTable.js';
+import { FISH, FISH_IDS, fishLengthCm } from './FishTable.js';
 import { UPGRADES, nextLevel, FUEL_PRICE } from './Gear.js';
 import { FishPortrait } from './FishPortrait.js';
 
@@ -78,6 +78,60 @@ const CSS = /* css */`
 .gm-log { margin-top: var(--tw-3); color: var(--tw-ink-3); font-size: var(--tw-fs-sm); line-height: 1.5; }
 .gm-row .gm-cm { font-family: var(--tw-mono); color: var(--tw-ink-3); }
 .gm-row.has-cm { grid-template-columns: 1fr auto auto auto auto; }
+.gm-tabs { display: flex; gap: var(--tw-2); margin-bottom: var(--tw-3); border-bottom: 1px solid var(--tw-line); padding-bottom: var(--tw-2); }
+.gm-tab { font: 600 var(--tw-fs-sm) var(--tw-font); color: var(--tw-ink-3); background: none; border: none; cursor: pointer; padding: var(--tw-1) var(--tw-3); border-radius: 999px; transition: all var(--tw-fast); }
+.gm-tab.is-active { color: #0b1418; background: var(--tw-aqua); }
+.gm-catalog-badge { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--tw-aqua); }
+.gm-guide-card { display: flex; flex-direction: column; padding: var(--tw-2) 0; border-bottom: 1px solid var(--tw-line); }
+.gm-guide-head { display: flex; justify-content: space-between; align-items: center; }
+.gm-guide-name { font-weight: 600; color: var(--tw-ink); }
+.gm-guide-name.is-locked { color: var(--tw-ink-3); }
+.gm-guide-sci { font-size: var(--tw-fs-sm); font-style: italic; color: var(--tw-ink-3); margin-top: 1px; }
+.gm-guide-stats { font-family: var(--tw-mono); font-size: var(--tw-fs-sm); color: var(--tw-sun); margin-top: 2px; }
+.gm-guide-hint { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); margin-top: 2px; }
+.gm-guide-check { font-weight: 700; color: var(--tw-aqua); margin-right: 4px; }
+
+.gm-oxygen { position: absolute; left: var(--tw-edge); top: calc(50% + 128px);
+	width: calc(112 * var(--tw-u)); height: calc(112 * var(--tw-u));
+	display: none; align-items: center; justify-content: center;
+	border-radius: 50%; font: 600 var(--tw-fs-xs) var(--tw-font); color: var(--tw-ink);
+	pointer-events: none; opacity: 0; transform: translate(calc(-10 * var(--tw-u)), 0);
+	transition: opacity var(--tw-slow) var(--tw-ease), transform var(--tw-slow) var(--tw-ease);
+	z-index: 50; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45); }
+.gm-oxygen.is-on { display: flex; opacity: 1; transform: translate(0, 0); }
+.gm-oxygen-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.gm-oxygen-needle-group { transition: transform 120ms linear; }
+.gm-oxygen-dial-center { position: absolute; left: 50%; top: 58%; transform: translate(-50%, -50%);
+	display: flex; flex-direction: column; align-items: center; pointer-events: none; gap: 1px; }
+.gm-oxygen-icon { font-size: calc(15 * var(--tw-u)); line-height: 1; }
+.gm-oxygen-time { font-family: var(--tw-mono); font-size: calc(13 * var(--tw-u)); font-weight: 700;
+	letter-spacing: -0.02em; color: #f4ead6; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8); line-height: 1.1; text-align: center; }
+.gm-oxygen.is-low .gm-oxygen-time { color: #fa8c16; text-shadow: 0 0 8px rgba(250, 140, 22, 0.6); }
+.gm-oxygen.is-critical .gm-oxygen-time { color: #ef4444; text-shadow: 0 0 10px rgba(239, 68, 68, 0.85); animation: gm-pulse 0.7s infinite; }
+.gm-oxygen-label { font-size: calc(8 * var(--tw-u)); font-weight: 800; letter-spacing: 0.12em; color: var(--tw-ink-3); text-transform: uppercase; }
+.gm-oxygen-tick-full { position: absolute; bottom: calc(16 * var(--tw-u)); left: calc(14 * var(--tw-u));
+	font-family: var(--tw-mono); font-size: calc(8 * var(--tw-u)); font-weight: 700; color: #22c55e; }
+.gm-oxygen-tick-empty { position: absolute; bottom: calc(16 * var(--tw-u)); right: calc(16 * var(--tw-u));
+	font-family: var(--tw-mono); font-size: calc(8 * var(--tw-u)); font-weight: 700; color: #ef4444; }
+
+@media (max-width: 700px), (max-height: 620px) {
+	.gm-oxygen { top: auto; bottom: calc(var(--tw-edge) + 55px); left: var(--tw-edge); width: calc(96 * var(--tw-u)); height: calc(96 * var(--tw-u)); }
+}
+
+.gm-float { display: none; align-items: center; gap: var(--tw-2); }
+.gm-float.is-on { display: flex; }
+.gm-float-bar > span { background: #fa8c16; }
+.gm-float.is-full .gm-float-bar > span { background: #ef4444; }
+.gm-float-icon { font-size: 1.1em; line-height: 1; }
+
+.gm-blackout { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.5s ease-out; z-index: 999; }
+.gm-blackout.is-on { opacity: 0.95; }
+
+.gm-held-fish { position: absolute; top: calc(var(--tw-edge) + calc(45 * var(--tw-u))); right: var(--tw-edge); display: none; align-items: center; gap: var(--tw-2);
+	padding: var(--tw-2) var(--tw-3); border-radius: 999px; font: 500 var(--tw-fs-sm) var(--tw-font); color: var(--tw-ink); pointer-events: none; }
+.gm-held-fish.is-on { display: flex; }
+.gm-held-fish b { color: var(--tw-sun); }
+.gm-held-hint { color: var(--tw-aqua); font-weight: 600; margin-left: 4px; }
 
 /* catch card: full screen. The world dims and blurs; the fish lies side-on in its own studio light
    (FishPortrait, a WebGPU canvas) between the name above and the numbers below */
@@ -85,11 +139,11 @@ const CSS = /* css */`
 	background: radial-gradient(70% 60% at 50% 50%, rgba(10, 22, 34, 0.55) 0%, rgba(4, 9, 15, 0.86) 100%);
 	-webkit-backdrop-filter: blur(10px) saturate(0.8); backdrop-filter: blur(10px) saturate(0.8);
 	transition: opacity 420ms var(--tw-ease), visibility 0s linear 420ms; }
-.gm-catch-scrim.is-on { opacity: 1; visibility: visible; transition: opacity 420ms var(--tw-ease), visibility 0s; }
+.gm-catch-scrim.is-on { opacity: 1; visibility: visible; pointer-events: auto; cursor: pointer; transition: opacity 420ms var(--tw-ease), visibility 0s; }
 .gm-catch { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 1.4vh, 18px);
 	padding: var(--tw-6) var(--tw-edge); color: #f4ead6; font: 500 var(--tw-fs-md) var(--tw-font); text-align: center;
 	pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 300ms var(--tw-ease), visibility 0s linear 300ms; }
-.gm-catch.is-on { opacity: 1; visibility: visible; transition: opacity 300ms var(--tw-ease), visibility 0s; }
+.gm-catch.is-on { opacity: 1; visibility: visible; pointer-events: auto; cursor: pointer; transition: opacity 300ms var(--tw-ease), visibility 0s; }
 .gm-catch-top, .gm-catch-bottom { display: flex; flex-direction: column; align-items: center; opacity: 0; }
 .gm-catch.is-on .gm-catch-top { animation: gm-rise 700ms var(--tw-ease) 120ms forwards; }
 .gm-catch.is-on .gm-catch-bottom { animation: gm-rise 700ms var(--tw-ease) 520ms forwards; }
@@ -172,7 +226,12 @@ export class GameHUD {
 		style.textContent = CSS;
 		document.head.append( style );
 
-		this.purse = h( 'div', 'gm-purse tw-glass', `<span class="gm-money">$0</span><span class="gm-cooler"><span class="gm-cooler-label">Cooler</span><span class="gm-cooler-bar"><span></span></span><span class="gm-cooler-kg">0 / 30 kg</span></span><span class="gm-gauge gm-fuel"><span>Fuel</span><span class="gm-cooler-bar gm-fuel-bar"><span></span></span><b class="gm-fuel-l">40 L</b></span><span class="gm-gauge gm-sonar"><span>Sonar</span><b class="gm-sonar-d">0 m</b><span class="gm-sonar-dots"></span></span>` );
+		this.purse = h( 'div', 'gm-purse tw-glass', `
+			<span class="gm-money">$0</span>
+			<span class="gm-cooler"><span class="gm-cooler-label">Cooler</span><span class="gm-cooler-bar"><span></span></span><span class="gm-cooler-kg">0 / 30 kg</span></span>
+			<span class="gm-float"><span class="gm-float-icon">🛟</span><span class="gm-float-label">Float</span><span class="gm-cooler-bar gm-float-bar"><span></span></span><span class="gm-float-kg">0 / 15 kg</span></span>
+			<span class="gm-gauge gm-fuel"><span>Fuel</span><span class="gm-cooler-bar gm-fuel-bar"><span></span></span><b class="gm-fuel-l">40 L</b></span>
+			<span class="gm-gauge gm-sonar"><span>Sonar</span><b class="gm-sonar-d">0 m</b><span class="gm-sonar-dots"></span></span>` );
 		this.fuelEl = this.purse.querySelector( '.gm-fuel' );
 		this.fuelBar = this.purse.querySelector( '.gm-fuel-bar > span' );
 		this.fuelL = this.purse.querySelector( '.gm-fuel-l' );
@@ -184,6 +243,9 @@ export class GameHUD {
 		this.coolerBar = this.purse.querySelector( '.gm-cooler-bar > span' );
 		this.coolerKg = this.purse.querySelector( '.gm-cooler-kg' );
 		this.coolerLabel = this.purse.querySelector( '.gm-cooler-label' );
+		this.floatEl = this.purse.querySelector( '.gm-float' );
+		this.floatBar = this.purse.querySelector( '.gm-float-bar > span' );
+		this.floatKg = this.purse.querySelector( '.gm-float-kg' );
 
 		this.fight = h( 'div', 'gm-fight tw-glass', `
 			<div class="gm-fight-head"><span class="gm-fight-call">Fish on!</span><span class="gm-fight-dist">0 m</span></div>
@@ -202,13 +264,68 @@ export class GameHUD {
 		this.catchScrim = h( 'div', 'gm-catch-scrim' );
 		this.catchCard = h( 'div', 'gm-catch tw-glass' );
 		this.catchOpen = false;
+
+		// Dismiss catch card on click or pointerdown
+		const dismissCatch = () => {
+
+			if ( this.catchOpen ) {
+
+				this.hideCatch();
+				if ( this.game ) {
+
+					this.game._cardDismissed = true;
+					if ( this.game.landing ) this.game.endLanding();
+
+				}
+
+			}
+
+		};
+		this.catchScrim.addEventListener( 'pointerdown', dismissCatch );
+		this.catchCard.addEventListener( 'pointerdown', dismissCatch );
+
+		// Spearfishing elements: Circular Oxygen Dial (under dive depth meter), blackout vignette, held fish banner
+		this.oxygen = h( 'div', 'gm-oxygen tw-glass', `
+			<svg class="gm-oxygen-svg" viewBox="0 0 100 100" width="100%" height="100%">
+				<!-- Outer bezel track -->
+				<path class="gm-oxygen-bg" d="M 17.09 69.00 A 38 38 0 1 1 82.91 69.00" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="5" stroke-linecap="round" />
+				<!-- 3 Sectors: Green (first 2/3), Orange (next 1/6), Red (last 1/6) -->
+				<path class="gm-oxygen-sector-green" d="M 17.09 69.00 A 38 38 0 0 1 74.43 20.89" fill="none" stroke="#22c55e" stroke-width="4.5" stroke-linecap="round" />
+				<path class="gm-oxygen-sector-orange" d="M 74.43 20.89 A 38 38 0 0 1 87.42 43.40" fill="none" stroke="#fa8c16" stroke-width="4.5" stroke-linecap="butt" />
+				<path class="gm-oxygen-sector-red" d="M 87.42 43.40 A 38 38 0 0 1 82.91 69.00" fill="none" stroke="#ef4444" stroke-width="4.5" stroke-linecap="round" />
+				<!-- Zone divider ticks -->
+				<line x1="69.5" y1="26.7" x2="74.43" y2="20.89" stroke="rgba(255,255,255,0.6)" stroke-width="1.2" />
+				<line x1="80.6" y1="44.8" x2="87.42" y2="43.40" stroke="rgba(255,255,255,0.6)" stroke-width="1.2" />
+				<!-- Rotating Pointer Needle -->
+				<g class="gm-oxygen-needle-group" style="transform-origin: 50px 50px; transform: rotate(-120deg);">
+					<line class="gm-oxygen-needle" x1="50" y1="50" x2="50" y2="16" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" />
+					<circle class="gm-oxygen-needle-tip" cx="50" cy="16" r="2.5" fill="#22c55e" />
+				</g>
+				<!-- Pivot hub -->
+				<circle cx="50" cy="50" r="4" fill="#f4ead6" stroke="rgba(0,0,0,0.5)" stroke-width="1.5" />
+			</svg>
+			<div class="gm-oxygen-dial-center">
+				<span class="gm-oxygen-icon">🫁</span>
+				<span class="gm-oxygen-time">4:00</span>
+				<span class="gm-oxygen-label">AIR</span>
+			</div>
+			<span class="gm-oxygen-tick-full">4m</span>
+			<span class="gm-oxygen-tick-empty">0</span>` );
+		this.oxyNeedleGroup = this.oxygen.querySelector( '.gm-oxygen-needle-group' );
+		this.oxyNeedleTip = this.oxygen.querySelector( '.gm-oxygen-needle-tip' );
+		this.oxyTime = this.oxygen.querySelector( '.gm-oxygen-time' );
+		this.blackout = h( 'div', 'gm-blackout' );
+		this.heldFishBadge = h( 'div', 'gm-held-fish tw-glass', '<span>🐟</span><b class="gm-held-name"></b><span class="gm-held-hint"></span>' );
+		this.heldFishName = this.heldFishBadge.querySelector( '.gm-held-name' );
+		this.heldFishHint = this.heldFishBadge.querySelector( '.gm-held-hint' );
+
 		const hud = ui.hud || ui.root;
-		hud.append( this.catchScrim, this.purse, this.fight, this.bite, this.cast, this.dot, this.catchCard );
+		hud.append( this.catchScrim, this.purse, this.fight, this.bite, this.cast, this.dot, this.oxygen, this.heldFishBadge, this.catchCard );
 
 		// panels (interactive)
 		this.inv = h( 'div', 'gm-panel tw-glass tw-interactive' );
 		this.stand = h( 'div', 'gm-panel tw-glass tw-interactive' );
-		ui.root.append( this.inv, this.stand );
+		ui.root.append( this.blackout, this.inv, this.stand );
 		this.invOpen = false;
 		this.standOpen = false;
 		this._last = {};
@@ -248,7 +365,7 @@ export class GameHUD {
 	}
 
 	// per frame
-	update( { fight, casting, power, bite, aiming, fuel = null, sonar = null } ) {
+	update( { fight, casting, power, bite, aiming, fuel = null, sonar = null, breath = null, maxBreath = 240, blackout = false, heldFish = null, floatDist = null, floatKg = 0, floatMaxKg = 15, inWater = false } ) {
 
 		// boat instruments in the purse: fuel while aboard, the fish finder when fitted
 		this.fuelEl.classList.toggle( 'is-on', !! fuel );
@@ -295,6 +412,86 @@ export class GameHUD {
 		if ( casting ) this.castBar.style.width = `${ power * 100 }%`;
 		this.dot.classList.toggle( 'is-on', !! aiming && ! this.invOpen && ! this.standOpen );
 
+		// Oxygen dial gauge (Kiwi freediving / spearfishing)
+		const showOxy = inWater && ( breath !== null && breath !== undefined );
+		this.oxygen.classList.toggle( 'is-on', showOxy );
+		if ( showOxy ) {
+
+			const frac = Math.max( 0, Math.min( 1, breath / maxBreath ) );
+			// Needle rotation: full (frac=1) -> -120deg (start of green); empty (frac=0) -> +120deg (end of red)
+			const rotDeg = - 120 + ( 1 - frac ) * 240;
+			this.oxyNeedleGroup.style.transform = `rotate(${ rotDeg }deg)`;
+
+			const mins = Math.floor( breath / 60 );
+			const secs = Math.floor( breath % 60 );
+			this.oxyTime.textContent = `${ mins }:${ secs.toString().padStart( 2, '0' ) }`;
+
+			// Sectors: Green (first 2/3, breath > 80s); Orange (next 1/6, 40s < breath <= 80s); Red (last 1/6, breath <= 40s)
+			const isOrange = breath <= 80 && breath > 40;
+			const isRed = breath <= 40;
+
+			this.oxygen.classList.toggle( 'is-low', isOrange );
+			this.oxygen.classList.toggle( 'is-critical', isRed );
+
+			if ( isRed ) {
+
+				this.oxyNeedleTip.setAttribute( 'fill', '#ef4444' );
+
+			} else if ( isOrange ) {
+
+				this.oxyNeedleTip.setAttribute( 'fill', '#fa8c16' );
+
+			} else {
+
+				this.oxyNeedleTip.setAttribute( 'fill', '#22c55e' );
+
+			}
+
+		}
+
+		// Blackout vignette
+		this.blackout.classList.toggle( 'is-on', !! blackout );
+
+		// Dive Float status in purse
+		const showFloat = inWater || ( floatKg > 0 );
+		this.floatEl.classList.toggle( 'is-on', showFloat );
+		if ( showFloat ) {
+
+			this.floatKg.textContent = `${ floatKg.toFixed( 1 ) } / ${ floatMaxKg } kg`;
+			this.floatBar.style.width = `${ Math.min( 100, floatKg / floatMaxKg * 100 ) }%`;
+			this.floatEl.classList.toggle( 'is-full', floatKg >= floatMaxKg - 0.05 );
+
+		}
+
+		// Held Fish Badge
+		const showHeld = !! heldFish;
+		this.heldFishBadge.classList.toggle( 'is-on', showHeld );
+		if ( showHeld ) {
+
+			this.heldFishName.textContent = `${ heldFish.name } (${ heldFish.kg.toFixed( 1 ) } kg)`;
+			if ( inWater ) {
+
+				const fitsFloat = ( floatKg + heldFish.kg ) <= floatMaxKg + 0.05;
+				if ( fitsFloat ) {
+
+					this.heldFishHint.textContent = ( floatDist !== null && floatDist !== undefined )
+						? `🛟 Float: ${ floatDist.toFixed( 1 ) }m · [E] to Stash (${ floatKg.toFixed( 1 ) }/${ floatMaxKg } kg)`
+						: `[E] to Stash in Float (${ floatKg.toFixed( 1 ) }/${ floatMaxKg } kg)`;
+
+				} else {
+
+					this.heldFishHint.textContent = `⚠️ Float full (${ floatKg.toFixed( 1 ) }/${ floatMaxKg } kg)! Return to boat/shore to transfer to cooler!`;
+
+				}
+
+			} else {
+
+				this.heldFishHint.textContent = `[E] to Stash in Boat Cooler`;
+
+			}
+
+		}
+
 	}
 
 	// ---- catch card
@@ -306,7 +503,9 @@ export class GameHUD {
 		const badge = info.record ? '<span class="gm-badge is-record">★ New record</span>'
 			: info.newSpecies ? '<span class="gm-badge is-new">New species</span>' : '<span class="gm-badge is-plain">Catch</span>';
 		let note;
+		const isFloat = info.target === 'float';
 		if ( ! info.kept ) note = `<div class="gm-catch-note is-warn">No room in the ${ this.game.state.upgrades.hold > 0 ? 'hold' : 'cooler' } · you let it go</div>`;
+		else if ( isFloat ) note = `<div class="gm-catch-note">Stashed in Dive Float · Transfer to boat cooler when aboard</div>`;
 		else if ( info.record ) note = `<div class="gm-catch-note">Previous best <b>${ info.prevBestKg.toFixed( 2 ) } kg</b> · ${ info.prevBestCm } cm. Beaten by ${ ( info.kg - info.prevBestKg ).toFixed( 2 ) } kg.</div>`;
 		else if ( info.newSpecies ) note = '<div class="gm-catch-note">First one in your fish log.</div>';
 		else note = `<div class="gm-catch-note">Your best: ${ info.prevBestKg.toFixed( 2 ) } kg · ${ info.prevBestCm } cm</div>`;
@@ -332,7 +531,7 @@ export class GameHUD {
 				<div class="gm-catch-stats">
 					<div class="gm-stat"><span>Length</span><b>${ info.cm }<small>cm</small></b><i>${ inch.toFixed( 1 ) } in</i></div>
 					<div class="gm-stat"><span>Weight</span><b>${ info.kg < 1 ? info.kg.toFixed( 2 ) : info.kg.toFixed( 1 ) }<small>kg</small></b><i>${ lb.toFixed( 1 ) } lb</i></div>
-					<div class="gm-stat is-value"><span>Value</span><b>$${ info.value }</b><i>${ info.kept ? 'in the cooler' : 'let go' }</i></div>
+					<div class="gm-stat is-value"><span>Value</span><b>$${ info.value }</b><i>${ ! info.kept ? 'let go' : isFloat ? 'in dive float' : 'in the cooler' }</i></div>
 				</div>
 				${ note }
 				<div class="gm-catch-foot"><kbd>Click</kbd> or <kbd>E</kbd> to continue<span class="gm-catch-timer"><span></span></span></div>
@@ -343,6 +542,7 @@ export class GameHUD {
 		c.classList.add( 'is-on' );
 		this.catchScrim.classList.add( 'is-on' );
 		this.catchOpen = true;
+		releaseMouse();
 		// the fish itself: the real model in a studio, drawn live into the stage canvas
 		try {
 
@@ -385,16 +585,108 @@ export class GameHUD {
 	renderInventory() {
 
 		const s = this.game.state;
-		const rows = s.inventory.map( ( f ) => `<div class="gm-row has-cm"><span>${ FISH[ f.species ].name }${ f.record ? '<small>record</small>' : '' }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><button class="gm-mini" data-release="${ f.id }">Release</button></div>` ).join( '' );
-		const logged = Object.entries( s.log ).filter( ( [ k ] ) => FISH[ k ] ).map( ( [ k, v ] ) => `${ FISH[ k ].name }: ${ v.count } caught, best ${ v.bestKg.toFixed( 2 ) } kg · ${ v.bestCm ?? Math.round( fishLengthCm( k, v.bestKg ) ) } cm` ).join( '<br>' );
+		this.invTab = this.invTab || 'catch';
+
+		const caughtSpecies = Object.keys( s.log ).filter( ( k ) => FISH[ k ] && s.log[ k ].count > 0 );
+		const totalSpecies = FISH_IDS.length;
+		const count = caughtSpecies.length;
+
+		let bodyHtml = '';
+		if ( this.invTab === 'catch' ) {
+
+			const floatFish = ( this.game.diveFloat && this.game.diveFloat.stashedFish ) || [];
+			const floatKg = this.game.diveFloat ? this.game.diveFloat.totalKg : 0;
+			const floatMax = this.game.diveFloat ? this.game.diveFloat.maxKg : 15;
+
+			const coolerRows = s.inventory.map( ( f ) => `<div class="gm-row has-cm"><span>${ FISH[ f.species ].name }${ f.record ? '<small>record</small>' : '' }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><button class="gm-mini" data-release="${ f.id }">Release</button></div>` ).join( '' );
+
+			const floatRows = floatFish.map( ( f ) => `<div class="gm-row has-cm"><span style="color:#fa8c16">🛟 [Float] ${ FISH[ f.species ] ? FISH[ f.species ].name : f.species }${ f.record ? '<small>record</small>' : '' }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><span style="font-size:var(--tw-fs-xs);color:var(--tw-ink-3)">in float</span></div>` ).join( '' );
+
+			bodyHtml = `
+				<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: var(--tw-2); padding: var(--tw-2) var(--tw-3); background: var(--tw-fill-2); border-radius: var(--tw-r-sm);">
+					<span>🛟 <b>Dive Float Locker:</b> ${ floatFish.length } fish · ${ floatKg.toFixed( 1 ) } of ${ floatMax } kg</span>
+					<button class="gm-mini" data-transfer-float ${ floatFish.length ? '' : 'disabled' }>Transfer to Cooler</button>
+				</div>
+				<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: var(--tw-2);">
+					<span class="gm-sub">🧊 <b>${ s.upgrades.hold > 0 ? 'Boat Hold' : 'Boat Cooler' }:</b> ${ s.inventory.length } fish · ${ s.holdKg.toFixed( 1 ) } of ${ s.stats.holdKg } kg · $${ s.holdValue }</span>
+					<button class="gm-mini is-ghost" data-empty-cooler ${ s.inventory.length ? '' : 'disabled' }>Empty Cooler</button>
+				</div>
+				<div class="gm-list">${ floatRows + ( coolerRows || ( ! floatRows ? '<div class="gm-empty">Nothing stashed yet. Spear fish around the reefs and bombies, or cast from the pier/boat.</div>' : '' ) ) }</div>
+				<div class="gm-foot"><span class="gm-sub">Sell catch at Joe's pier stall</span><button class="gm-btn is-ghost" data-close>Close (I)</button></div>`;
+
+		} else {
+
+			// Field Guide Tab
+			const guideCards = FISH_IDS.map( ( id ) => {
+
+				const f = FISH[ id ];
+				const log = s.log[ id ];
+				const isCaught = log && log.count > 0;
+				if ( isCaught ) {
+
+					return `
+						<div class="gm-guide-card">
+							<div class="gm-guide-head">
+								<span class="gm-guide-name"><span class="gm-guide-check">✓</span>${ f.name }</span>
+								<span class="gm-guide-stats">Best: ${ log.bestKg.toFixed( 2 ) } kg · ${ log.bestCm ?? Math.round( fishLengthCm( id, log.bestKg ) ) } cm</span>
+							</div>
+							<div class="gm-guide-sci">${ f.sci || '' } · Caught: ${ log.count }</div>
+							<div class="gm-guide-hint">${ habitatHint( f.habitat ) }</div>
+						</div>`;
+
+				} else {
+
+					return `
+						<div class="gm-guide-card">
+							<div class="gm-guide-head">
+								<span class="gm-guide-name is-locked">? ${ f.name }</span>
+								<span class="gm-guide-stats" style="color:var(--tw-ink-3)">Undiscovered</span>
+							</div>
+							<div class="gm-guide-sci">${ f.sci || '' }</div>
+							<div class="gm-guide-hint">${ habitatHint( f.habitat ) }</div>
+						</div>`;
+
+				}
+
+			} ).join( '' );
+
+			bodyHtml = `
+				<p class="gm-sub">Species Documented: <b>${ count } of ${ totalSpecies }</b> (${ Math.round( count / totalSpecies * 100 ) }%)</p>
+				<div class="gm-list">${ guideCards }</div>
+				<div class="gm-foot"><span class="gm-sub">Target: Document all 18 species!</span><button class="gm-btn is-ghost" data-close>Close (I)</button></div>`;
+
+		}
+
 		this.inv.innerHTML = `
-			<h2>${ s.upgrades.hold > 0 ? 'Fish hold' : 'Cooler' }</h2>
-			<p class="gm-sub">${ s.inventory.length } fish · ${ s.holdKg.toFixed( 1 ) } of ${ s.stats.holdKg } kg · worth $${ s.holdValue }</p>
-			<div class="gm-list">${ rows || '<div class="gm-empty">Nothing yet. Cast from the pier, the beach or the boat.</div>' }</div>
-			${ logged ? `<div class="gm-log"><b>Fish log</b><br>${ logged }</div>` : '' }
-			<div class="gm-foot"><span class="gm-sub">Sell at the fish stand by the pier</span><button class="gm-btn is-ghost" data-close>Close (I)</button></div>`;
+			<h2>Spearfisher's Locker</h2>
+			<div class="gm-tabs">
+				<button class="gm-tab ${ this.invTab === 'catch' ? 'is-active' : '' }" data-tab="catch">${ s.upgrades.hold > 0 ? 'Fish Hold' : 'Cooler' } (${ s.inventory.length })</button>
+				<button class="gm-tab ${ this.invTab === 'guide' ? 'is-active' : '' }" data-tab="guide">📖 Field Guide (${ count }/${ totalSpecies })</button>
+			</div>
+			${ bodyHtml }`;
+
 		this.inv.querySelector( '[data-close]' ).onclick = () => this.toggleInventory( false );
+		for ( const b of this.inv.querySelectorAll( '[data-tab]' ) ) b.onclick = () => {
+
+			this.invTab = b.dataset.tab;
+			this.renderInventory();
+
+		};
 		for ( const b of this.inv.querySelectorAll( '[data-release]' ) ) b.onclick = () => s.release( Number( b.dataset.release ) );
+		const emptyBtn = this.inv.querySelector( '[data-empty-cooler]' );
+		if ( emptyBtn ) emptyBtn.onclick = () => {
+
+			s.emptyCooler();
+			this.renderInventory();
+
+		};
+		const transferBtn = this.inv.querySelector( '[data-transfer-float]' );
+		if ( transferBtn ) transferBtn.onclick = () => {
+
+			if ( this.game.transferFloatToCooler ) this.game.transferFloatToCooler();
+			this.renderInventory();
+
+		};
 
 	}
 
@@ -421,15 +713,58 @@ export class GameHUD {
 	renderStand() {
 
 		const s = this.game.state;
-		const v = this.vendor || { name: 'Fish buyer' };
+		const v = this.vendor || { name: 'Joe · Fish buyer' };
+		const caughtSpecies = Object.keys( s.log ).filter( ( k ) => FISH[ k ] && s.log[ k ].count > 0 );
+		const totalSpecies = FISH_IDS.length;
+		const count = caughtSpecies.length;
+
+		let catalogGreeting;
+		if ( count === 0 ) {
+
+			catalogGreeting = 'Kia ora! Heading out to the reefs and bombies? Show me every species you spear! My goal is to catalogue all 18 species in our waters.';
+
+		} else if ( count < 6 ) {
+
+			catalogGreeting = `Good start! You've documented ${ count } of ${ totalSpecies } species for my board. Keep diving around the bombies and pier piles.`;
+
+		} else if ( count < 12 ) {
+
+			catalogGreeting = `Great progress, mate! ${ count } / ${ totalSpecies } species catalogued. You're turning into a proper Kiwi spearo! Take the boat offshore for the pelagics.`;
+
+		} else if ( count < totalSpecies ) {
+
+			catalogGreeting = `Nearly complete! ${ count } of ${ totalSpecies } species found. Only ${ totalSpecies - count } rare ones left in the deep water and outer pinnacles!`;
+
+		} else {
+
+			catalogGreeting = '★ LEGEND OF AOTEAROA! You have speared and catalogued all 18 species! The entire reef is documented!';
+
+		}
+
 		const rows = s.inventory.map( ( f ) => `<div class="gm-row has-cm"><span>${ FISH[ f.species ].name }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><button class="gm-mini" data-sell="${ f.id }">Sell</button></div>` ).join( '' );
 		this.stand.innerHTML = `
 			<h2>${ v.name }</h2>
-			<p class="gm-sub">${ s.inventory.length ? v.greeting || 'Let\'s see what you caught.' : v.idle || 'Come back when you\'ve got fish.' }</p>
-			<div class="gm-list">${ rows || '<div class="gm-empty">Your cooler is empty.</div>' }</div>
+			<p class="gm-sub">${ catalogGreeting }</p>
+			<div style="display:flex; justify-content:space-between; align-items:center; margin: var(--tw-2) 0; padding: var(--tw-2) var(--tw-3); background: var(--tw-fill-2); border-radius: var(--tw-r-sm);">
+				<span class="gm-catalog-badge">📖 Species Catalog: <b>${ count } / ${ totalSpecies } (${ Math.round( count / totalSpecies * 100 ) }%)</b></span>
+				<button class="gm-mini" data-guide>View Field Guide</button>
+			</div>
+			<div class="gm-list">${ rows || '<div class="gm-empty">Your cooler is empty. Spear or catch fish to sell.</div>' }</div>
 			<div class="gm-foot"><button class="gm-btn is-ghost" data-close>Leave (E)</button><button class="gm-btn" data-all ${ s.inventory.length ? '' : 'disabled' }>Sell all · $${ s.holdValue }</button></div>`;
 		this.stand.querySelector( '[data-close]' ).onclick = () => this.closeStand();
 		this.stand.querySelector( '[data-all]' ).onclick = () => this.game.sellAll();
+		const guideBtn = this.stand.querySelector( '[data-guide]' );
+		if ( guideBtn ) {
+
+			guideBtn.onclick = () => {
+
+				this.closeStand();
+				this.invTab = 'guide';
+				this.toggleInventory( true );
+
+			};
+
+		}
 		for ( const b of this.stand.querySelectorAll( '[data-sell]' ) ) b.onclick = () => this.game.sell( [ Number( b.dataset.sell ) ] );
 
 	}
@@ -473,3 +808,17 @@ function releaseMouse() {
 	} catch ( e ) { /* ignore */ }
 
 }
+
+function habitatHint( habitat ) {
+
+	if ( ! habitat ) return 'Habitat: Offshore drop-offs';
+	const list = [];
+	if ( habitat.reef ) list.push( 'coral reefs & bombies' );
+	if ( habitat.pier ) list.push( 'pier pilings' );
+	if ( habitat.deep ) list.push( 'deep offshore water' );
+	if ( habitat.shallows ) list.push( 'sandy shallows' );
+	if ( habitat.bay ) list.push( 'sheltered bay' );
+	return list.length ? 'Habitat: ' + list.join( ', ' ) : 'Habitat: Offshore drop-offs';
+
+}
+

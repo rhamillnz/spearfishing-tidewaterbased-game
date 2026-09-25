@@ -89,6 +89,62 @@ export class GameState {
 
 	}
 
+	// Record catch for field guide and catch card without placing in boat cooler immediately (stashed in dive float)
+	recordCatch( species, kg, timeOfDay = 12 ) {
+
+		kg = Math.round( kg * 100 ) / 100;
+		const cm = Math.round( fishLengthCm( species, kg ) );
+		const logEntry = this.log[ species ] || ( this.log[ species ] = { count: 0, bestKg: 0 } );
+		const newSpecies = logEntry.count === 0;
+		const prevBestKg = logEntry.bestKg, prevBestCm = logEntry.bestCm ?? ( prevBestKg > 0 ? Math.round( fishLengthCm( species, prevBestKg ) ) : 0 );
+		const record = ! newSpecies && kg > prevBestKg;
+		logEntry.count ++;
+		if ( kg > prevBestKg ) {
+
+			logEntry.bestKg = kg;
+			logEntry.bestCm = cm;
+
+		}
+
+		const value = fishValue( species, kg );
+		this.lastCatch = { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept: true, target: 'float' };
+		this.save();
+		this.emit();
+		return { species, kg, cm, value, caughtAt: timeOfDay, record };
+
+	}
+
+	// Transfer a fish (from dive float) into the boat cooler / hold
+	storeFish( fish ) {
+
+		if ( ! this.fits( fish.kg ) ) return false;
+		const f = {
+			id: this._nextId ++,
+			species: fish.species,
+			kg: fish.kg,
+			cm: fish.cm ?? Math.round( fishLengthCm( fish.species, fish.kg ) ),
+			value: fish.value ?? fishValue( fish.species, fish.kg ),
+			caughtAt: fish.caughtAt ?? 12,
+			record: !! fish.record,
+		};
+		this.inventory.push( f );
+		this.save();
+		this.emit();
+		return f;
+
+	}
+
+	// Empty all fish from cooler / hold (useful for clearing out catches)
+	emptyCooler() {
+
+		const count = this.inventory.length;
+		this.inventory = [];
+		this.save();
+		this.emit();
+		return count;
+
+	}
+
 	// sell the given fish ids (all when omitted); returns the money made
 	sell( ids = null ) {
 

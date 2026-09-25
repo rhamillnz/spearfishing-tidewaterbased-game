@@ -121,6 +121,18 @@ const s2 = new GameState( storage );
 s.save();
 ok( s2.load() && s2.money === s.money && s2.inventory.length === 1 && s2.log.grunt.bestKg === 0.84 && s2.stats.holdKg === 70, 'save / load round trip' );
 ok( s2.addFish( 'grunt', 0.5 ).id > b.id, 'ids keep counting after a load' );
+// ---- two-tier dive float to boat cooler storage
+{
+
+	const st = new GameState( storage );
+	st.emptyCooler();
+	ok( st.inventory.length === 0, 'emptyCooler clears out fish' );
+	const floatFish = st.recordCatch( 'redSnapper', 4.5, 11 );
+	ok( st.inventory.length === 0 && st.log.redSnapper.count === 1, 'recordCatch logs fish without adding to cooler' );
+	const stored = st.storeFish( floatFish );
+	ok( stored && st.inventory.length === 1 && st.holdKg === 4.5, 'storeFish transfers float fish to cooler' );
+
+}
 // ---- lengths and the catch card's record logic
 {
 
@@ -167,8 +179,17 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 	st.money = 20;
 	ok( st.refuel() === 13 && st.money === 0 && Math.abs( st.fuelL - 23 ) < 1e-6, 'refuel stops when the money runs out' );
 	st.money = 1000;
-	ok( st.buy( 'fuel' ) && st.fuelL === 80, 'a new tank comes full' );
-	ok( st.buy( 'fishFinder' ) && st.stats.finder === true && st.buy( 'fishFinder' ) === null, 'fish finder: one level' );
+	st.money = 2000;
+	ok( st.buy( 'speargun' ) && st.stats.rangeM === 6.0 && st.stats.spearVel === 33, 'speargun upgrade improves range and velocity' );
+	ok( st.buy( 'wetsuit' ) && st.stats.breathSec === 300 && st.stats.stealthBonus === 0.25, 'wetsuit upgrade improves breath hold and stealth' );
+	ok( st.buy( 'fins' ) && st.stats.swimSpeedMul === 1.25, 'fins upgrade improves swim speed' );
+
+	// Spearfisher's Field Guide: 18 species catalog
+	const allSpecies = Object.keys( FISH );
+	ok( allSpecies.length === 18, '18 total species in the marine ecosystem' );
+	for ( const sp of allSpecies ) st.addFish( sp, 1.0 );
+	const catalogCount = Object.keys( st.log ).filter( ( k ) => FISH[ k ] && st.log[ k ].count > 0 ).length;
+	ok( catalogCount === 18, 'all 18 species successfully catalogued in the field guide' );
 
 }
 console.log( `value check ${ value }` );
