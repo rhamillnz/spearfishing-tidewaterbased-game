@@ -1,11 +1,8 @@
-# Tidewater
+# Spearfishing: Tidewater Derivative
 
-An island fishing game for the browser. Cast from the pier, the beach or your own boat, fight the fish,
-sell your catch to Joe at the fish stand, and spend it on better gear at Marta's chandlery. Around it is a
-real-time tropical island and ocean: swim the reef, drive the boat out to deep water, and watch a humpback
-breach. It runs directly on WebGPU and WGSL with its own small rendering engine, no framework.
+Tidewater derivative with spearfishing and freediving mechanics. Mostly just to learn about this way of creating games.
 
-**Play it:** https://dgreenheck.github.io/tidewater/
+Cast from the pier, or dive underwater with a speargun, manage your breath hold, deploy your dive float to store your catch, navigate rocky bombies, and hunt New Zealand reef fish. It runs directly on WebGPU and WGSL with its own custom rendering engine, no heavy frameworks.
 
 ![Fishing off the pier at golden hour](docs/screenshot.jpg)
 
