@@ -315,6 +315,14 @@ export class Reef {
 
 	}
 
+	// Underwater Bombies (world/Bombies.js): fish attracted to one circle its rock rather than
+	// clustering inside it. Called once Game.js has built the pinnacles.
+	setBombies( bombies ) {
+
+		this.fish.setBombies( bombies );
+
+	}
+
 	// ------------------------------------------------------------------ models
 
 	buildKinds() {

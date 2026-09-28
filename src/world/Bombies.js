@@ -80,9 +80,91 @@ const KELP_SURFACE = /* wgsl */`
 	s.translucency = s.albedo * 0.25;
 `;
 
+// Radius of a bombie's rock at world height y (m from the axis), interpolated from the profile
+// captured while building its geometry (buildCore, below). Conservative: the farthest any column
+// of the surface of revolution reaches at that height, so nothing visibly pokes through.
+export function bombieRadiusAt( b, y ) {
+
+	const p = b.profile;
+	if ( ! p || ! p.length ) return b.footRadius || b.radius;
+	if ( y <= p[ 0 ].y ) return p[ 0 ].r;
+	const last = p[ p.length - 1 ];
+	if ( y >= last.y ) return last.r;
+	for ( let i = 1; i < p.length; i ++ ) {
+
+		if ( y <= p[ i ].y ) {
+
+			const a = p[ i - 1 ], c = p[ i ];
+			const t = c.y > a.y ? ( y - a.y ) / ( c.y - a.y ) : 0;
+			return a.r + ( c.r - a.r ) * t;
+
+		}
+
+	}
+
+	return last.r;
+
+}
+
+// Pushes pos ({ x, y, z }, mutated in place) out of every bombie whose profile it is inside, plus
+// a skin margin (m). Cheap: a quick vertical then horizontal bounding check per bombie before the
+// profile lookup, so it is safe to call for every fish (and spawn position) every frame.
+export function pushOutOfBombies( locations, pos, skin = 0.35 ) {
+
+	let pushed = false;
+	for ( const b of locations ) {
+
+		if ( pos.y < b.baseDepth - 1.5 || pos.y > b.topDepth + 1.5 ) continue;
+		const maxR = ( b.footRadius || b.radius ) + skin;
+		const dx = pos.x - b.x, dz = pos.z - b.z;
+		const d2 = dx * dx + dz * dz;
+		if ( d2 > maxR * maxR ) continue;
+		const r = bombieRadiusAt( b, pos.y ) + skin;
+		if ( d2 >= r * r ) continue;
+		const d = Math.sqrt( d2 ) || 1e-4;
+		pos.x = b.x + dx / d * r;
+		pos.z = b.z + dz / d * r;
+		pushed = true;
+
+	}
+
+	return pushed;
+
+}
+
+// A handful of stacked cylinders approximating a bombie's taper, for the shared Colliders system
+// (the player's capsule and the boat's hull outline both already push out of it): coarser than the
+// true profile but conservative, and cheap for resolveCapsule() to test against every frame.
+function stackedCylinders( profile, skin, bands = 5 ) {
+
+	const n = profile.length;
+	const per = Math.max( 1, Math.ceil( n / bands ) );
+	const cyls = [];
+	for ( let i = 0; i < n - 1; i += per ) {
+
+		const j = Math.min( n - 1, i + per );
+		// the true min / max y of the slice, not just its end points: a ring's height can dip a
+		// little where the foot follows an uneven seabed, and the cylinder must still cover it
+		let r = 0, yMin = Infinity, yMax = - Infinity;
+		for ( let k = i; k <= j; k ++ ) {
+
+			r = Math.max( r, profile[ k ].r );
+			yMin = Math.min( yMin, profile[ k ].y );
+			yMax = Math.max( yMax, profile[ k ].y );
+
+		}
+
+		cyls.push( { yMin, yMax, radius: r + skin } );
+
+	}
+
+	return cyls;
+
+}
+
 export class Bombies {
 
-	constructor( { scene, terrain } ) {
+	constructor( { scene, terrain, colliders = null } ) {
 
 		this.scene = scene;
 		this.terrain = terrain;
@@ -109,6 +191,18 @@ export class Bombies {
 		} );
 
 		const { rock, kelp } = buildBombiesGeometry( this.locations, heightAt );
+
+		// solid: nothing (diver, fish, boat hull) passes through the rock. A few stacked cylinders
+		// per pinnacle, tapered to the real profile, into the world's shared collider set.
+		if ( colliders ) {
+
+			for ( const b of this.locations ) {
+
+				for ( const c of stackedCylinders( b.profile, 0.4 ) ) colliders.addCylinder( b.x, b.z, c.radius, c.yMin, c.yMax, { tag: 'bombie' } );
+
+			}
+
+		}
 
 		// weathered reef rock with pale coralline crusts
 		this.material = createPropMaterial( 'bombieRock', { surface: ROCK_SURFACE } );
@@ -413,6 +507,29 @@ function buildCore( site, rng, seed, heightAt ) {
 	for ( let j = 0; j < NC; j ++ ) P.add( new Vector3( pos[ idxOf( NR - 1, j ) * 3 ], pos[ idxOf( NR - 1, j ) * 3 + 1 ], pos[ idxOf( NR - 1, j ) * 3 + 2 ] ) );
 	P.divideScalar( NC );
 	pos[ apex * 3 ] = P.x; pos[ apex * 3 + 1 ] = Math.min( crown, P.y + 0.15 ); pos[ apex * 3 + 2 ] = P.z;
+
+	// a conservative radius-vs-height profile, for collision (player, boat, fish): per ring the
+	// average world height and the farthest any column reaches from the axis, skirt to apex. Player
+	// and fish both push out to this same surface (bombieRadiusAt / pushOutOfBombies below).
+	const ringProfile = ( i ) => {
+
+		let ySum = 0, rMax = 0;
+		for ( let j = 0; j < NC; j ++ ) {
+
+			const k = idxOf( i, j );
+			ySum += pos[ k * 3 + 1 ];
+			rMax = Math.max( rMax, Math.hypot( pos[ k * 3 ] - x0, pos[ k * 3 + 2 ] - z0 ) );
+
+		}
+
+		return { y: ySum / NC, r: rMax };
+
+	};
+
+	const profile = [ ringProfile( - 1 ) ];
+	for ( let i = 0; i < NR; i ++ ) profile.push( ringProfile( i ) );
+	profile.push( { y: pos[ apex * 3 + 1 ], r: 0.1 * r } );
+	site.profile = profile;
 
 	// triangles: rows -1 .. NR-1 around, then the apex fan (outward winding: j runs anticlockwise
 	// seen from below, so a, next ring, next column)

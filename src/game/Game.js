@@ -57,7 +57,9 @@ export class Game {
 		this._cardT = 0;
 
 		// Spearfishing world entities: Underwater Bombies (rock cover), Dive Float ("Floating Locker"), and Reef Sharks
-		this.bombies = new Bombies( { scene: app.scene, terrain: app.terrainData } );
+		this.bombies = new Bombies( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders } );
+		// the reef's fish orbit the bombies rather than swim through them (Fish.js stepGroup)
+		if ( app.reef && app.reef.setBombies ) app.reef.setBombies( this.bombies );
 		this.diveFloat = new DiveFloat( { scene: app.scene, query: app.query } );
 		this.sharks = [
 			new Shark( { scene: app.scene, terrain: app.terrainData, index: 0, homePos: new Vector3( 30, - 8, 115 ) } ),

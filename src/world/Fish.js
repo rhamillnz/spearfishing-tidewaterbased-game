@@ -9,7 +9,7 @@ import { createSwimMaterial } from './fish/FishMaterial.js';
 import { bandFade } from '../materials/LODFade.js';
 import { WhaleWater } from '../ocean/WhaleWater.js';
 import { FrameUniforms } from '../engine/render/Frame.js';
-import { BOMBIE_LOCATIONS } from './Bombies.js';
+import { BOMBIE_LOCATIONS, bombieRadiusAt, pushOutOfBombies } from './Bombies.js';
 
 // Fish and other swimmers of the reef and the bay, simulated on the CPU and drawn in a single
 // render object (ReefBatch: one indirect draw per model and level of detail) with the
@@ -161,6 +161,8 @@ class Group {
 const _q = new THREE.Quaternion();
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _threat = new THREE.Vector3();
 const _frustum = new THREE.Frustum(), _sphere = new THREE.Sphere(), _m = new THREE.Matrix4();
+const _bombiePos = new THREE.Vector3(); // scratch for pushOutOfBombies (avoids a per-fish allocation)
+const _bombieTarget = new THREE.Vector3(); // scratch for bombieRingTarget
 
 export class FishSchools {
 
@@ -178,6 +180,7 @@ export class FishSchools {
 		this.rng = mulberry32( seed );
 		this.time = 0;
 		this.spray = null; // set by the owner (Spray.js): splashes of leaping mullet
+		this.bombies = null; // set by setBombies(): the real pinnacle profiles, for circling + push-out
 		this.group = new THREE.Group();
 		this.group.name = 'Fish';
 		parent.add( this.group );
@@ -429,9 +432,12 @@ export class FishSchools {
 		}
 
 		// ---- Haystack Rocks & Bombies (Iconic NZ Spearfishing Schools!)
-		for ( const b of BOMBIE_LOCATIONS ) {
+		for ( let bi = 0; bi < BOMBIE_LOCATIONS.length; bi ++ ) {
 
-			const bZone = { x: b.x, z: b.z, r: b.radius * 2.2 + 8, band: [ 1.8, 28 ] };
+			const b = BOMBIE_LOCATIONS[ bi ];
+			// bombieIndex looks up the live Bombies instance (setBombies(), once Game.js has built the
+			// pinnacles) for the true rock profile; radius/height are a rough fallback until then.
+			const bZone = { x: b.x, z: b.z, r: b.radius * 2.2 + 8, band: [ 1.8, 28 ], bombieIndex: bi, bombieRadius: b.radius, bombieHeight: b.height };
 			// 1. NZ Snapper (Tāmure) around kelp and rocky gutters
 			this.addGroup( 'snapper', 8 + Math.floor( this.rng() * 6 ), bZone );
 			// 2. Tarakihi schooling near the rock face
@@ -463,6 +469,57 @@ export class FishSchools {
 	setWhale( whale ) {
 
 		this.whale = whale;
+
+	}
+
+	// Underwater Bombies (world/Bombies.js), built after this class lays out its groups: from here
+	// on, fish attracted to one circle its rock (stepGroup's bombieIndex branch) and every fish is
+	// kept out of its profile every frame (stepGroup, pushOutOfBombies). Also runs once immediately,
+	// to fix up the spawn positions initGroup() picked before the real pinnacle geometry existed.
+	setBombies( bombies ) {
+
+		this.bombies = bombies;
+		for ( let i = 0; i < this.n; i ++ ) {
+
+			const i3 = i * 3;
+			_bombiePos.set( this.pos[ i3 ], this.pos[ i3 + 1 ], this.pos[ i3 + 2 ] );
+			if ( pushOutOfBombies( bombies.locations, _bombiePos, 0.35 ) ) {
+
+				this.pos[ i3 ] = _bombiePos.x;
+				this.pos[ i3 + 2 ] = _bombiePos.z;
+				this.prev[ i3 ] = _bombiePos.x;
+				this.prev[ i3 + 2 ] = _bombiePos.z;
+
+			}
+
+		}
+
+	}
+
+	// Depth and preferred ring radius for a fish attracted to a bombie (g.zone.bombieIndex set): a
+	// spot just outside the rock, never the point at its centre, at its own depth band between the
+	// seabed and the crown (a per-fish phase and radius so it reads as loose milling rather than a
+	// single ring). stepGroup steers the fish around this ring itself (radius and tangential speed
+	// directly, not a point to chase - see there); this only has to place it at the start (t = 0,
+	// initGroup, hence the x / z it also returns - the school's initial bearings, spun out by seed)
+	// with no sudden jump once the fish starts steering. Falls back to the zone's raw radius /
+	// height until Game.js has built the real pinnacle (setBombies) and bombieRadiusAt is available.
+	bombieRingTarget( g, seed, t, out ) {
+
+		const loc = this.bombies && this.bombies.locations[ g.zone.bombieIndex ];
+		const lo = loc ? loc.baseDepth + 1.4 : - ( g.zone.bombieHeight || 8 ) - 2;
+		const hi = loc ? loc.topDepth - 0.6 : - 3;
+		const band = ( seed * 7.3 ) % 1;
+		const yBase = lo < hi ? lo + ( hi - lo ) * band : ( lo + hi ) * 0.5;
+		const y = yBase + Math.sin( t * 0.1 + seed * 13 ) * 0.35;
+		// the rock's radius at the fish's *steady* depth band, not the wobbling instantaneous target:
+		// near the crown the taper can be steep enough that the small vertical wobble alone would
+		// swing the ring radius by metres, which the fish can never actually catch up with
+		const rock = loc ? bombieRadiusAt( loc, yBase ) : ( g.zone.bombieRadius || 5 );
+		const ring = rock + 1 + 2 * ( ( seed * 3.7 ) % 1 ) + Math.sin( t * 0.2 + seed * 17 ) * 0.4;
+		const ang = seed * TAU;
+		out.set( g.zone.x + Math.cos( ang ) * ring, y, g.zone.z + Math.sin( ang ) * ring );
+		return out;
 
 	}
 
@@ -511,21 +568,36 @@ export class FishSchools {
 		for ( let k = 0; k < g.count; k ++ ) {
 
 			const i = g.offset + k;
-			let x = g.home.x, z = g.home.z;
-			for ( let t = 0; t < 10; t ++ ) {
+			const seed = rng();
+			let x, y, z;
+			if ( g.zone.bombieIndex != null ) {
 
-				const tx = g.home.x + ( rng() - 0.5 ) * spread * 2, tz = g.home.z + ( rng() - 0.5 ) * spread * 2;
-				if ( this.depthAt( tx, tz ) > sp.minDepth + 0.3 ) {
+				// spawn straight onto the circling ring (bombieRingTarget, t = 0): scattering near the
+				// axis and correcting afterwards would land several fish on top of one another
+				this.bombieRingTarget( g, seed, 0, _bombieTarget );
+				x = _bombieTarget.x; z = _bombieTarget.z;
+				y = this.clampY( sp, x, z, _bombieTarget.y );
 
-					x = tx;
-					z = tz;
-					break;
+			} else {
+
+				x = g.home.x; z = g.home.z;
+				for ( let t = 0; t < 10; t ++ ) {
+
+					const tx = g.home.x + ( rng() - 0.5 ) * spread * 2, tz = g.home.z + ( rng() - 0.5 ) * spread * 2;
+					if ( this.depthAt( tx, tz ) > sp.minDepth + 0.3 ) {
+
+						x = tx;
+						z = tz;
+						break;
+
+					}
 
 				}
 
+				y = this.clampY( sp, x, z, g.home.y + ( rng() - 0.5 ) * spread * 0.5 );
+
 			}
 
-			const y = this.clampY( sp, x, z, g.home.y + ( rng() - 0.5 ) * spread * 0.5 );
 			const L = sp.length[ 0 ] + ( sp.length[ 1 ] - sp.length[ 0 ] ) * rng();
 			this.size[ i ] = L;
 			this.pos.set( [ x, y, z ], i * 3 );
@@ -536,7 +608,7 @@ export class FishSchools {
 			this.head.set( [ Math.cos( d ), 0, Math.sin( d ) ], i * 3 );
 			this.phase[ i ] = rng() * TAU;
 			this.speedMul[ i ] = 0.85 + rng() * 0.3;
-			this.seed[ i ] = rng();
+			this.seed[ i ] = seed;
 			this.kind[ i ] = kind0;
 			this.pattern[ i ] = pattern;
 			// bait formation slot: random direction, radius biased outward (a hollow-ish ball)
@@ -921,7 +993,27 @@ export class FishSchools {
 			let tx = g.goal.x, ty = g.goal.y, tz = g.goal.z;
 			let want = cruise;
 			const s = this.seed[ i ];
-			if ( sp.mode === 'mill' || sp.mode === 'pair' ) {
+			if ( g.zone.bombieIndex != null ) {
+
+				// circling a bombie: hold a ring just outside the rock, never the point at its centre
+				// (bombieRingTarget - also where these fish spawn, so there is no sudden jump), radius
+				// and tangential speed steered directly rather than chasing the ring's moving point
+				// through open water - a pursuit that laps its pursuer spirals in toward the centre
+				// instead of actually going round it.
+				this.bombieRingTarget( g, s, t, _bombieTarget );
+				const dxr = x - g.zone.x, dzr = z - g.zone.z;
+				const rNow = Math.hypot( dxr, dzr ) || 1e-3;
+				const ringR = Math.hypot( _bombieTarget.x - g.zone.x, _bombieTarget.z - g.zone.z );
+				const ux = dxr / rNow, uz = dzr / rNow; // outward, at the fish's own bearing
+				const tanx = - uz * g.spin, tanz = ux * g.spin; // tangential, the way the school turns
+				want = cruise * ( 1.1 + 0.3 * Math.max( 0, Math.sin( t * 0.6 + s * 15 ) ) );
+				const vRad = vx * ux + vz * uz; // damp the radial spring so it settles instead of ringing
+				ax += ux * ( ( ringR - rNow ) * 0.35 - vRad * 0.5 ) + tanx * want * sp.wGoal;
+				az += uz * ( ( ringR - rNow ) * 0.35 - vRad * 0.5 ) + tanz * want * sp.wGoal;
+				ay += ( _bombieTarget.y - y ) * 1.2 * sp.wGoal;
+				tx = x; ty = _bombieTarget.y; tz = z; // no further horizontal pull from the goal code below
+
+			} else if ( sp.mode === 'mill' || sp.mode === 'pair' ) {
 
 				// slow circling around the coral head
 				const ang = t * ( sp.mode === 'pair' ? 0.25 : 0.12 ) * g.spin + s * 0.8;
@@ -1109,6 +1201,16 @@ export class FishSchools {
 
 				ny = bottom;
 				if ( vy < 0 ) vy = 0;
+
+			}
+
+			// never inside a bombie's rock (cheap: a bounding check per bombie before the profile
+			// lookup, see pushOutOfBombies) - whatever put it there, goal-seeking toward a moving
+			// circling target included
+			if ( this.bombies ) {
+
+				_bombiePos.set( nx, ny, nz );
+				if ( pushOutOfBombies( this.bombies.locations, _bombiePos, 0.3 ) ) { nx = _bombiePos.x; nz = _bombiePos.z; }
 
 			}
 
