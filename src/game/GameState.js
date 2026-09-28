@@ -54,7 +54,8 @@ export class GameState {
 
 	// store a caught fish; returns the entry, or null when the hold is full (it is logged either way).
 	// A record beats an earlier catch of the species; the first one of a species is a new species.
-	addFish( species, kg, timeOfDay = 12 ) {
+	// `stoned`: a clean speargun headshot ("stone shot") - worth 25% more, carried onto the entry.
+	addFish( species, kg, timeOfDay = 12, stoned = false ) {
 
 		kg = Math.round( kg * 100 ) / 100;
 		const cm = Math.round( fishLengthCm( species, kg ) );
@@ -70,9 +71,9 @@ export class GameState {
 
 		}
 
-		const value = fishValue( species, kg );
+		const value = Math.round( fishValue( species, kg ) * ( stoned ? 1.25 : 1 ) );
 		const kept = this.fits( kg );
-		this.lastCatch = { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept };
+		this.lastCatch = { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept, stoned };
 		if ( ! kept ) {
 
 			this.save();
@@ -81,7 +82,7 @@ export class GameState {
 
 		}
 
-		const f = { id: this._nextId ++, species, kg, cm, value, caughtAt: timeOfDay, record };
+		const f = { id: this._nextId ++, species, kg, cm, value, caughtAt: timeOfDay, record, stoned };
 		this.inventory.push( f );
 		this.save();
 		this.emit();
@@ -90,7 +91,7 @@ export class GameState {
 	}
 
 	// Record catch for field guide and catch card without placing in boat cooler immediately (stashed in dive float)
-	recordCatch( species, kg, timeOfDay = 12 ) {
+	recordCatch( species, kg, timeOfDay = 12, stoned = false ) {
 
 		kg = Math.round( kg * 100 ) / 100;
 		const cm = Math.round( fishLengthCm( species, kg ) );
@@ -106,11 +107,11 @@ export class GameState {
 
 		}
 
-		const value = fishValue( species, kg );
-		this.lastCatch = { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept: true, target: 'float' };
+		const value = Math.round( fishValue( species, kg ) * ( stoned ? 1.25 : 1 ) );
+		this.lastCatch = { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept: true, target: 'float', stoned };
 		this.save();
 		this.emit();
-		return { species, kg, cm, value, caughtAt: timeOfDay, record };
+		return { species, kg, cm, value, caughtAt: timeOfDay, record, stoned };
 
 	}
 
@@ -126,6 +127,7 @@ export class GameState {
 			value: fish.value ?? fishValue( fish.species, fish.kg ),
 			caughtAt: fish.caughtAt ?? 12,
 			record: !! fish.record,
+			stoned: !! fish.stoned,
 		};
 		this.inventory.push( f );
 		this.save();

@@ -9,6 +9,11 @@ import { createPropMaterial, createLineMaterial, PAT } from './GameMaterials.js'
 // - Spear sticks into terrain/rocks on impact or reaches max line range (4.8m)
 // - Right-click (tap while loaded): quick spear jab / poke (used for fending off sharks)
 // - Right-click / R (when spear is out): retrieves spear and begins reloading
+//
+// States: 'idle' -> ( fire ) 'spearOut' (flying / stuck) -> ( fish hit ) 'fighting' (a CatchMinigame
+// fight, same tension-band mechanic as the fishing rod) -> ( caught ) 'held' (the fish stays impaled,
+// loaded at the muzzle, until stashed) -> ( stash ) 'reloading' -> 'idle'. 'retrieving' reels an empty
+// or lost spear back in (a miss, an escaped fish, or a stone shot's clean, fightless retrieve).
 
 export const SPEAR_L = 1.15; // 1.15m shaft
 export const GUN_L = 0.92;   // 92cm teak wood barrel
@@ -66,6 +71,10 @@ export class Speargun {
 		this.spearQuat = new Quaternion();
 		this.stuckInTerrain = false;
 
+		// While fighting: the speared fish's tether target (wanders about at the fight's distance)
+		this.fishPos = new Vector3();
+		this._wander = 0;
+
 		// Speargun muzzle point in world space
 		this.muzzlePos = new Vector3();
 
@@ -113,15 +122,16 @@ export class Speargun {
 	equip( on ) {
 
 		this.equipped = on;
+		// a fish held on the spear stays put (loaded, at the muzzle) whether or not the gun is drawn
 		if ( on ) {
 
-			this.state = this.loaded ? 'idle' : 'reloading';
+			if ( this.state !== 'held' ) this.state = this.loaded ? 'idle' : 'reloading';
 			this.t = 0;
 			if ( this.audio && this.audio.rodReady ) this.audio.rodReady();
 
 		} else {
 
-			this.state = 'stowed';
+			if ( this.state !== 'held' ) this.state = 'stowed';
 			this.gunMesh.visible = false;
 			this.spearMesh.visible = false;
 			this.lineMesh.visible = false;
@@ -132,7 +142,8 @@ export class Speargun {
 
 	fire() {
 
-		if ( ! this.equipped || ! this.loaded || this.state === 'reloading' || this.state === 'spearOut' ) {
+		if ( ! this.equipped || ! this.loaded || this.state === 'reloading' || this.state === 'spearOut'
+			|| this.state === 'fighting' || this.state === 'held' ) {
 
 			return false;
 
@@ -166,8 +177,14 @@ export class Speargun {
 		if ( ! this.equipped || this.state === 'reloading' || this.state === 'spearOut' ) return false;
 		if ( this.state === 'poke' ) return false;
 
-		this.state = 'poke';
-		this.pokeT = 0;
+		// a fish held or fighting on the spear keeps its pose: only the shark-repelling jab still fires
+		const carrying = this.state === 'held' || this.state === 'fighting';
+		if ( ! carrying ) {
+
+			this.state = 'poke';
+			this.pokeT = 0;
+
+		}
 		if ( this.audio && this.audio.whoosh ) this.audio.whoosh( 0.35 );
 
 		const cam = this.camera;
@@ -201,6 +218,7 @@ export class Speargun {
 				this.spearedFish = hit;
 				fishSchools.impaleFish( hit );
 				this.spearPos.copy( pokeTip );
+				this.loaded = false;
 				if ( this.onFishHit ) this.onFishHit( hit );
 
 			}
@@ -211,9 +229,27 @@ export class Speargun {
 
 	}
 
+	// a fish is on: same tension-band fight as the fishing rod (see CatchMinigame / Game.updateFight)
+	startFight() {
+
+		this.state = 'fighting';
+		this.fishPos.copy( this.spearPos );
+		this._wander = 0;
+		this.t = 0;
+
+	}
+
+	// the fight is won: the fish stays impaled, loaded at the muzzle, until it's stashed
+	hold() {
+
+		this.state = 'held';
+		this.t = 0;
+
+	}
+
 	retrieve() {
 
-		if ( this.state !== 'spearOut' ) return;
+		if ( this.state === 'reloading' || this.state === 'stowed' || this.state === 'held' ) return;
 		this.state = 'retrieving';
 		this.stuckInTerrain = false;
 		if ( this.audio && this.audio.lineOut ) this.audio.lineOut( 0.4 );
@@ -228,7 +264,7 @@ export class Speargun {
 
 	}
 
-	update( dt, { visible, aiming = false, fishSchools = null } ) {
+	update( dt, { visible, aiming = false, fishSchools = null, fight = null } ) {
 
 		if ( ! this.equipped ) {
 
@@ -291,6 +327,15 @@ export class Speargun {
 
 			p.elev += Math.sin( this.t * 1.5 ) * 0.003;
 			p.side += Math.sin( this.t * 1.1 + 0.8 ) * 0.003;
+
+		}
+
+		// Fighting: the gun kicks and sways with the fish on the end of the shooting line, the same
+		// way the rod dips and sways with the fight (see FishingRod.update)
+		if ( this.state === 'fighting' && fight ) {
+
+			p.elev += - 0.1 * fight.surge + 0.04 * Math.sin( this.t * 2.3 );
+			p.side += 0.05 * Math.sin( this.t * 1.1 + fight.surge * 2 );
 
 		}
 
@@ -417,6 +462,49 @@ export class Speargun {
 			this.spearMesh.quaternion.copy( this.spearQuat );
 			this.spearMesh.visible = visible;
 
+		} else if ( this.state === 'fighting' && fight ) {
+
+			// The fish fights at the end of the shooting line: it surges and thrashes at the fight's
+			// distance from the muzzle (a tug-of-war on the tether, not a literal swimming distance -
+			// same tension-band CatchMinigame that drives the rod, so it fights just as hard)
+			this._wander += dt * ( 0.6 + fight.surge * 2.2 );
+			_v.copy( this.fishPos ).sub( this.muzzlePos );
+			const d0 = _v.length() || 1;
+			_v.multiplyScalar( 1 / d0 );
+			const sideways = _h.set( - _v.z, 0, _v.x ).multiplyScalar( Math.sin( this._wander ) * 0.3 * dt * ( 1 + fight.surge ) );
+			const dist = Math.min( this.maxRange || MAX_LINE, Math.max( 0.3, fight.distance ) );
+			this.fishPos.set( this.muzzlePos.x + _v.x * dist, this.muzzlePos.y + _v.y * dist, this.muzzlePos.z + _v.z * dist ).add( sideways );
+			this.spearPos.lerp( this.fishPos, 1 - Math.exp( - dt * 9 ) );
+
+			if ( this.spearPos.distanceToSquared( this.muzzlePos ) > 1e-5 ) {
+
+				_v.copy( this.spearPos ).sub( this.muzzlePos ).normalize();
+				this.spearQuat.setFromUnitVectors( new Vector3( 0, 1, 0 ), _v );
+
+			}
+
+			if ( fishSchools ) fishSchools.updateImpaledFish( this.spearPos, dt );
+
+			this.spearMesh.position.copy( this.spearPos );
+			this.spearMesh.quaternion.copy( this.spearQuat );
+			this.spearMesh.visible = visible;
+
+		} else if ( this.state === 'held' ) {
+
+			// Landed: the fish stays impaled just forward of the muzzle, in line with the barrel (the
+			// same basis as the loaded/idle pose below, just further out so the catch clears the gun)
+			this.spearMesh.matrix.copy( this.gunMesh.matrix );
+			_m.makeTranslation( 0, GUN_L * 0.75 + 0.5, 0.04 );
+			this.spearMesh.matrix.multiply( _m );
+			this.spearMesh.matrixWorldNeedsUpdate = true;
+			this.spearPos.setFromMatrixPosition( this.spearMesh.matrix );
+			this.spearMesh.quaternion.setFromRotationMatrix( this.spearMesh.matrix );
+
+			if ( fishSchools ) fishSchools.updateImpaledFish( this.spearPos, dt );
+
+			this.spearMesh.position.copy( this.spearPos );
+			this.spearMesh.visible = visible;
+
 		} else {
 
 			// Loaded: Spear sits neatly in the speargun track
@@ -432,7 +520,7 @@ export class Speargun {
 		}
 
 		// ---- Shooting Line
-		const lineActive = ( this.state === 'spearOut' || this.state === 'retrieving' );
+		const lineActive = ( this.state === 'spearOut' || this.state === 'retrieving' || this.state === 'fighting' );
 		if ( lineActive && visible ) {
 
 			const spearTail = _v2.copy( this.spearPos );

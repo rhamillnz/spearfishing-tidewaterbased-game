@@ -1610,7 +1610,7 @@ export class FishSchools {
 				const fLen = this.size[ i ];
 				const r = Math.max( hitRadius, fLen * 0.42 );
 
-				let distSq = 0;
+				let distSq = 0, hitX = spearPos.x, hitY = spearPos.y, hitZ = spearPos.z;
 				if ( segLenSq < 1e-5 ) {
 
 					distSq = ( fx - spearPos.x ) ** 2 + ( fy - spearPos.y ) ** 2 + ( fz - spearPos.z ) ** 2;
@@ -1618,10 +1618,10 @@ export class FishSchools {
 				} else {
 
 					const t = Math.max( 0, Math.min( 1, ( ( fx - spearPrevPos.x ) * vx + ( fy - spearPrevPos.y ) * vy + ( fz - spearPrevPos.z ) * vz ) / segLenSq ) );
-					const px = spearPrevPos.x + t * vx;
-					const py = spearPrevPos.y + t * vy;
-					const pz = spearPrevPos.z + t * vz;
-					distSq = ( fx - px ) ** 2 + ( fy - py ) ** 2 + ( fz - pz ) ** 2;
+					hitX = spearPrevPos.x + t * vx;
+					hitY = spearPrevPos.y + t * vy;
+					hitZ = spearPrevPos.z + t * vz;
+					distSq = ( fx - hitX ) ** 2 + ( fy - hitY ) ** 2 + ( fz - hitZ ) ** 2;
 
 				}
 
@@ -1630,12 +1630,22 @@ export class FishSchools {
 					// Alarm the school so nearby fish scatter from the speared fish
 					g.alarm = 6.0;
 
+					// Where along the body it landed (0 tail .. 1 snout) and which way the fish is
+					// facing, so the caller can tell a body shot from a clean headshot ("stone shot")
+					const H = this.head;
+					const hx = H[ i3 ], hy = H[ i3 + 1 ], hz = H[ i3 + 2 ];
+					const along = ( hitX - fx ) * hx + ( hitY - fy ) * hy + ( hitZ - fz ) * hz;
+					const bodyFrac = Math.max( 0, Math.min( 1, 0.5 + along / Math.max( fLen, 1e-3 ) ) );
+
 					return {
 						index: i,
 						speciesKey: sp.model,
 						name: sp.name,
 						lengthM: fLen,
 						position: [ fx, fy, fz ],
+						hitPoint: [ hitX, hitY, hitZ ],
+						heading: [ hx, hy, hz ],
+						bodyFrac,
 					};
 
 				}

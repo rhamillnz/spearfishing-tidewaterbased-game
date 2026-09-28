@@ -468,7 +468,7 @@ export class GameHUD {
 		this.heldFishBadge.classList.toggle( 'is-on', showHeld );
 		if ( showHeld ) {
 
-			this.heldFishName.textContent = `${ heldFish.name } (${ heldFish.kg.toFixed( 1 ) } kg)`;
+			this.heldFishName.textContent = `${ heldFish.name } (${ heldFish.kg.toFixed( 1 ) } kg) on your spear`;
 			if ( inWater ) {
 
 				const fitsFloat = ( floatKg + heldFish.kg ) <= floatMaxKg + 0.05;
@@ -509,6 +509,7 @@ export class GameHUD {
 		else if ( info.record ) note = `<div class="gm-catch-note">Previous best <b>${ info.prevBestKg.toFixed( 2 ) } kg</b> · ${ info.prevBestCm } cm. Beaten by ${ ( info.kg - info.prevBestKg ).toFixed( 2 ) } kg.</div>`;
 		else if ( info.newSpecies ) note = '<div class="gm-catch-note">First one in your fish log.</div>';
 		else note = `<div class="gm-catch-note">Your best: ${ info.prevBestKg.toFixed( 2 ) } kg · ${ info.prevBestCm } cm</div>`;
+		if ( info.stoned ) note += '<div class="gm-catch-note">🎯 <b>Stone shot!</b> Clean kill through the head · +25% value</div>';
 		// splash burst around the fish as it lands in view
 		let drops = '';
 		for ( let i = 0; i < 26; i ++ ) {

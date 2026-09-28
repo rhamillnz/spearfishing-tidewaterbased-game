@@ -19,6 +19,9 @@ import { Shark } from '../world/Shark.js';
 
 // how long the catch card stays up unless dismissed (ms)
 const CATCH_CARD_MS = 9000;
+// a spear hit this far into the front of the fish (0 tail .. 1 snout) is a clean "stone shot": an
+// instant kill, no fight, straight through the head
+const STONE_SHOT_FRAC = 0.7;
 
 // The fishing game on top of the world:
 //   R          take out / put away the rod or speargun
@@ -62,21 +65,65 @@ export class Game {
 			const [ a, b ] = fData.lw;
 			const lenCm = ( hit.lengthM || 0.45 ) * 100;
 			const calcKg = Math.max( fData.kg[ 0 ], Math.min( fData.kg[ 1 ] * 1.35, ( a * Math.pow( lenCm, b ) ) / 1000 ) );
-			const dist = this.speargun.spearPos.distanceTo( this.speargun.muzzlePos );
+			hit.kg = calcKg;
 
-			// Start CatchMinigame with tension feathering bar for speargun!
+			// A hit in the front ~30% of the fish (head/spine) is a clean, instant "stone shot": no
+			// fight, the spear glides straight back in, and the catch is worth more
+			const stoned = ( hit.bodyFrac ?? 0 ) >= STONE_SHOT_FRAC;
+			hit.stoned = stoned;
+
+			if ( stoned ) {
+
+				this.toast( `🎯 STONE SHOT! Clean kill through the head · +25% value`, 3200 );
+				if ( this.app.audio && this.app.audio.fishSplash ) this.app.audio.fishSplash( this.speargun.spearPos, 0.5 );
+				this.speargun.retrieve();
+				return;
+
+			}
+
+			// Otherwise it's on properly: the same tension-band fight as the fishing rod, using a
+			// shooting line strength and reel speed in the rod's own range so a fish of a given size
+			// fights just as hard on the speargun as it would on the rod
+			const g = this.state.stats;
+			const dist = this.speargun.spearPos.distanceTo( this.speargun.muzzlePos );
 			this.fight = new CatchMinigame( {
 				species: hit.speciesKey,
 				kg: calcKg,
-				lineKg: 35,
-				reelSpeed: 2.2,
+				lineKg: g.spearLineKg,
+				reelSpeed: g.spearReelSpeed,
 				distance: Math.max( 2.5, dist )
 			} );
 			this.fight._isSpeargun = true;
-			this.fight._spearedHit = hit;
+			this.speargun.startFight();
 
-			this.toast( `Fish on line! Hold LMB to pull line · Keep tension in green band!`, 2800 );
+			this.toast( `Fish on! Hold LMB to reel it in · keep the tension in the green band`, 2800 );
 			if ( this.app.audio && this.app.audio.fishSplash ) this.app.audio.fishSplash( this.speargun.spearPos, 0.6 );
+
+		};
+
+		// a fish reeled straight back in without a fight (a stone shot): land it the same way a fought
+		// catch lands, just without ever creating a CatchMinigame
+		this.speargun.onFishLanded = ( landed ) => {
+
+			if ( ! landed.stoned ) return;
+			const name = landed.name;
+
+			if ( this.app.audio && this.app.audio.fishFlop ) this.app.audio.fishFlop();
+
+			if ( this.app.player.mode === 'swim' ) {
+
+				this.speargun.hold();
+				this.heldSpearFish = { species: landed.speciesKey, kg: landed.kg, name, stoned: true };
+				this.toast( `Landed ${ name } (${ landed.kg.toFixed( 1 ) } kg)! It's held on your spear - stash it in your Dive Float [E]!`, 4200 );
+
+			} else {
+
+				const entry = this.state.addFish( landed.speciesKey, landed.kg, this.hour, true );
+				const info = this.state.lastCatch;
+				if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
+				else if ( entry ) this.toast( `${ name } · ${ entry.kg.toFixed( 2 ) } kg · $${ entry.value }`, 3600 );
+
+			}
 
 		};
 
@@ -106,7 +153,6 @@ export class Game {
 		this._rmb = false;
 		this._hookedSpecies = null;
 		this._pier = WORLD.pier;
-		this._tmp = new Vector3();
 		this.applyGear();
 		this.state.onChange( () => this.applyGear() );
 
@@ -224,7 +270,11 @@ export class Game {
 		// Weapon selection hotkeys: 1 for Rod, 2 for Speargun
 		if ( inp.hit( 'Digit1' ) ) {
 
-			if ( this.weapon !== 'rod' ) {
+			if ( this.fight ) {
+
+				this.toast( 'Finish the fight first!', 1400 );
+
+			} else if ( this.weapon !== 'rod' ) {
 
 				speargun.equip( false );
 				this.weapon = 'rod';
@@ -245,7 +295,11 @@ export class Game {
 
 		} else if ( inp.hit( 'Digit2' ) ) {
 
-			if ( this.weapon !== 'speargun' ) {
+			if ( this.fight ) {
+
+				this.toast( 'Finish the fight first!', 1400 );
+
+			} else if ( this.weapon !== 'speargun' ) {
 
 				this.cancelLine( true );
 				rod.equip( false );
@@ -281,6 +335,10 @@ export class Game {
 				if ( speargun.state === 'spearOut' ) {
 
 					speargun.retrieve();
+
+				} else if ( this.heldSpearFish && speargun.equipped ) {
+
+					this.toast( `Stash your ${ this.heldSpearFish.name } first! [E]`, 2200 );
 
 				} else {
 
@@ -346,10 +404,15 @@ export class Game {
 
 		} else if ( this.weapon === 'speargun' && speargun.equipped && ! panelOpen ) {
 
-			// Q key: Spear Poke (repel sharks / close jab)
+			// Q key: Spear Poke (repel sharks / close jab) - still works with a fish held on the spear
 			if ( inp.hit( 'KeyQ' ) && ! this.fight ) {
 
 				speargun.poke( this.sharks, app.reef?.fish );
+
+			} else if ( this.heldSpearFish ) {
+
+				// A fish is impaled and loaded at the muzzle: stash it before shooting again
+				if ( lDown ) this.toast( `You already have a ${ this.heldSpearFish.name } on your spear · stash it first! [E]`, 2400 );
 
 			} else if ( speargun.state === 'spearOut' && ! this.fight ) {
 
@@ -374,7 +437,7 @@ export class Game {
 		if ( this.fight ) this.updateFight( dt, lmb && ! panelOpen );
 
 		rod.update( dt, { visible: can && this.weapon === 'rod', fight: this.fight } );
-		speargun.update( dt, { visible: canSpear && this.weapon === 'speargun', aiming: rmb && speargun.equipped && ! panelOpen, fishSchools: app.reef?.fish } );
+		speargun.update( dt, { visible: canSpear && this.weapon === 'speargun', aiming: rmb && speargun.equipped && ! panelOpen, fishSchools: app.reef?.fish, fight: this.fight } );
 
 		// ---- Oxygen / Breath Hold & Blackout Simulation
 		const isSubmerged = ( p.mode === 'swim' ) && ( ! p.floating || app.camera.position.y < p.waterH - 0.05 );
@@ -389,7 +452,7 @@ export class Game {
 				if ( this.heldSpearFish ) {
 
 					this.toast( `Dropped ${ this.heldSpearFish.name } during the blackout!`, 3500 );
-					this.heldSpearFish = null;
+					this.dropHeldSpearFish();
 
 				}
 				// Float player to surface
@@ -442,19 +505,10 @@ export class Game {
 
 					// Shark snatches fish!
 					shark.snatch();
-					if ( this.heldSpearFish ) {
-
-						this.toast( 'A Bronze Whaler snatched your fish! Fend them off next time with [Q]!', 3500 );
-						this.heldSpearFish = null;
-
-					} else if ( speargun.spearedFish ) {
-
-						this.toast( 'A Bronze Whaler snatched the fish off your spear shaft!', 3500 );
-						speargun.spearedFish = null;
-						if ( app.reef?.fish ) app.reef.fish.releaseImpaledFish();
-						speargun.retrieve();
-
-					}
+					this.toast( this.heldSpearFish
+						? 'A Bronze Whaler snatched your fish! Fend them off next time with [Q]!'
+						: 'A Bronze Whaler snatched the fish off your spear shaft!', 3500 );
+					this.dropHeldSpearFish();
 
 				} else if ( d < 10.0 && this._sharkWarningT <= 0 ) {
 
@@ -486,7 +540,8 @@ export class Game {
 				} else {
 
 					this.heldSpearFish = null;
-					const logged = this.state.recordCatch( fish.species, fish.kg, this.hour );
+					this.releaseSpear();
+					const logged = this.state.recordCatch( fish.species, fish.kg, this.hour, !! fish.stoned );
 					this.diveFloat.stash( logged );
 					const info = this.state.lastCatch;
 					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
@@ -504,7 +559,8 @@ export class Game {
 				} else {
 
 					this.heldSpearFish = null;
-					const entry = this.state.addFish( fish.species, fish.kg, this.hour );
+					this.releaseSpear();
+					const entry = this.state.addFish( fish.species, fish.kg, this.hour, !! fish.stoned );
 					const info = this.state.lastCatch;
 					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
 					else if ( entry ) this.toast( `Stashed ${ fish.name } in Cooler (${ this.state.holdKg.toFixed( 1 ) } / ${ this.state.stats.holdKg } kg)!`, 3500 );
@@ -647,30 +703,11 @@ export class Game {
 
 		if ( this.fight ) {
 
+			// the speargun fight uses the same tension-band controls and HUD as the rod: one prompt for both
 			const f = this.fight;
-			if ( f._isSpeargun ) {
-
-				if ( f.tension > f.band[ 1 ] ) {
-
-					return { key: 'LMB', text: '⚠️ Too much tension! Release LMB to ease off!' };
-
-				} else if ( f.tension < f.band[ 0 ] ) {
-
-					return { key: 'LMB', text: 'Hold LMB to pull shooting line · Keep in green band!' };
-
-				} else {
-
-					return { key: 'LMB', text: 'Good tension! Keep holding LMB to reel fish in' };
-
-				}
-
-			} else {
-
-				return f.tension > f.band[ 1 ]
-					? { key: 'LMB', text: 'Too much tension · let go!' }
-					: { key: 'LMB', text: 'Hold to reel · let go when the tension goes red' };
-
-			}
+			return f.tension > f.band[ 1 ]
+				? { key: 'LMB', text: 'Too much tension · let go!' }
+				: { key: 'LMB', text: 'Hold to reel · let go when the tension goes red' };
 
 		}
 
@@ -1002,6 +1039,30 @@ export class Game {
 
 	}
 
+	// The held catch has been stashed: release the impaled fish mesh and let the gun reload
+	releaseSpear() {
+
+		if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+		this.speargun.spearedFish = null;
+		this.speargun.reload();
+
+	}
+
+	// Cleanly loses whatever fish is currently on the spear - impaled and being fought, or landed and
+	// held at the muzzle - without stashing it: releases the impaled fish mesh, clears the held-fish
+	// state and re-enables the gun. Used for a shark snatch and a blackout drop; called by name from
+	// the shark AI too, so keep the name and no-argument signature stable.
+	dropHeldSpearFish() {
+
+		if ( this.fight && this.fight._isSpeargun ) this.fight = null;
+		if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
+		this.speargun.spearedFish = null;
+		if ( this.speargun.state === 'held' ) this.speargun.reload();
+		else if ( this.speargun.state === 'fighting' || this.speargun.state === 'spearOut' ) this.speargun.retrieve();
+		this.heldSpearFish = null;
+
+	}
+
 	updateFight( dt, reeling ) {
 
 		const f = this.fight;
@@ -1010,18 +1071,10 @@ export class Game {
 
 		if ( f._isSpeargun ) {
 
-			// Speargun line retrieval physics: pull spear toward speargun muzzle as distance reduces
-			const muzzle = this.speargun.muzzlePos;
-			this._tmp.copy( this.speargun.spearPos ).sub( muzzle );
-			if ( this._tmp.lengthSq() > 1e-4 ) {
+			// The speargun's own update() positions and thrashes the impaled fish along the shooting
+			// line each frame (mirrors how the rod fight drives the bobber) - nothing to drive here.
 
-				this.speargun.spearPos.copy( muzzle ).addScaledVector( this._tmp.normalize(), f.distance );
-				this.speargun.spearQuat.setFromUnitVectors( new Vector3( 0, 1, 0 ), this._tmp );
-
-			}
-			if ( this.app.reef?.fish ) this.app.reef.fish.updateImpaledFish( this.speargun.spearPos, dt );
-
-			// Thrashing splash
+			// Thrashing splash as each surge starts, same cue as the rod
 			if ( f.surge > 0.6 && ! f._splashed && au && au.fishSplash ) au.fishSplash( this.speargun.spearPos, 0.3 + 0.5 * Math.min( 1, f.kg / 8 ) );
 			f._splashed = f.surge > 0.6 ? true : f.surge < 0.3 ? false : f._splashed;
 
@@ -1031,21 +1084,20 @@ export class Game {
 
 			if ( st === 'caught' ) {
 
-				// Fish reeled in to diver's hands/stringer!
-				if ( au && au.fishSplash ) au.fishSplash( muzzle, 0.8 );
+				// Fish reeled in! It stays impaled, loaded at the muzzle, until it's stashed
+				if ( au && au.fishSplash ) au.fishSplash( this.speargun.muzzlePos, 0.8 );
 				if ( au && au.fishFlop ) au.fishFlop();
-				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
-				this.speargun.spearedFish = null;
-				this.speargun.reload();
 
 				if ( this.app.player.mode === 'swim' ) {
 
-					this.heldSpearFish = { species: f.species, kg: f.kg, name: name };
-					this.toast( `Landed ${ name } (${ f.kg.toFixed( 1 ) } kg)! Stash in your Dive Float [E] to secure catch!`, 4000 );
+					this.speargun.hold();
+					this.heldSpearFish = { species: f.species, kg: f.kg, name: name, stoned: false };
+					this.toast( `Landed ${ name } (${ f.kg.toFixed( 1 ) } kg)! It's held on your spear - stash it in your Dive Float [E]!`, 4200 );
 
 				} else {
 
-					// On boat or shore: directly into cooler/hold
+					// On boat or shore: directly into cooler/hold, spear clears at once
+					this.releaseSpear();
 					const entry = this.state.addFish( f.species, f.kg, this.hour );
 					const info = this.state.lastCatch;
 					if ( this.hud && info ) this.hud.showCatch( info, CATCH_CARD_MS );
@@ -1055,14 +1107,14 @@ export class Game {
 
 			} else if ( st === 'snapped' ) {
 
-				this.toast( 'Snap! The shooting line snapped under tension!', 2600 );
+				// The shooting line itself snapped: the whole spear (and the fish on it) is lost
+				this.toast( 'Snap! The shooting line snapped - you lost the spear and the fish!', 2800 );
 				if ( au && au.lineSnap ) au.lineSnap();
-				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
-				this.speargun.spearedFish = null;
-				this.speargun.reload();
+				this.releaseSpear();
 
 			} else {
 
+				// Slack for too long: the barb tears out and the fish escapes, but the spear comes back
 				this.toast( 'The fish tore off the spear barb and escaped!', 2400 );
 				if ( this.app.reef?.fish ) this.app.reef.fish.releaseImpaledFish();
 				this.speargun.spearedFish = null;

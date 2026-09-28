@@ -21,11 +21,13 @@ export const UPGRADES = {
 		{ cost: 75, label: '7 ft graphite rod', castM: 32 },
 		{ cost: 260, label: '9 ft surf rod', castM: 45 },
 	] },
-	// spearfishing gear
+	// spearfishing gear. spearLineKg / spearReelSpeed drive the speargun's fish fight (CatchMinigame),
+	// kept in the same range as the rod's starter line/reel so a given fish fights just as hard on
+	// either weapon; named apart from lineKg/reelSpeed so the two tracks don't collide in gearStats().
 	speargun: { name: 'Speargun', levels: [
-		{ cost: 0, label: '75cm Reef Gun', rangeM: 4.8, spearVel: 27 },
-		{ cost: 160, label: '90cm Teak Double-Band', rangeM: 6.0, spearVel: 33 },
-		{ cost: 480, label: '115cm Carbon Roller Gun', rangeM: 7.5, spearVel: 39 },
+		{ cost: 0, label: '75cm Reef Gun', rangeM: 4.8, spearVel: 27, spearLineKg: 9, spearReelSpeed: 1.3 },
+		{ cost: 160, label: '90cm Teak Double-Band', rangeM: 6.0, spearVel: 33, spearLineKg: 15, spearReelSpeed: 1.7 },
+		{ cost: 480, label: '115cm Carbon Roller Gun', rangeM: 7.5, spearVel: 39, spearLineKg: 24, spearReelSpeed: 2.1 },
 	] },
 	wetsuit: { name: 'Wetsuit', levels: [
 		{ cost: 0, label: 'Basic Rashguard', breathSec: 240, stealthBonus: 0 },

@@ -104,6 +104,29 @@ ok( [ 'escaped' ].includes( table[ 'grunt/idle' ].st ), 'never reeling loses the
 ok( fight( 'tarpon', 35, policies.careful ).st !== 'caught', 'a 35 kg tarpon beats the starter line' );
 ok( fight( 'tarpon', 35, policies.careful, 50, 2.2 ).st === 'caught', 'the top line and reel land it' );
 
+// ---- the speargun fight matches the rod: same CatchMinigame, a shooting line / reel speed in the
+// rod's own starter range (Gear.js speargun levels), so a given fish fights comparably either way
+{
+
+	const defaults = gearStats( defaultUpgrades() );
+	ok( defaults.spearLineKg === 9 && defaults.spearReelSpeed === 1.3, 'starter speargun has its own shooting line / reel speed, in the rod\'s range' );
+	const st = new GameState();
+	st.money = 2000;
+	ok( st.buy( 'speargun' ) && st.stats.spearLineKg === 15 && st.stats.spearReelSpeed === 1.7, 'a better speargun also gets a stronger shooting line and faster reel' );
+
+	for ( const [ species, kg ] of [ [ 'grunt', 0.8 ], [ 'redSnapper', 5 ], [ 'jack', 6 ] ] ) {
+
+		const rodFight = fight( species, kg, policies.careful, 7, 1.1 );
+		const spearFight = fight( species, kg, policies.careful, 9, 1.3 );
+		console.log( `     ${ species } ${ kg } kg: rod ${ rodFight.st } ${ rodFight.t.toFixed( 1 ) }s vs speargun ${ spearFight.st } ${ spearFight.t.toFixed( 1 ) }s` );
+		ok( rodFight.st === 'caught' && spearFight.st === 'caught', `${ species }: careful reeling lands it on both the rod and the speargun's default gear` );
+		const ratio = spearFight.t / rodFight.t;
+		ok( ratio > 0.4 && ratio < 2.5, `${ species }: the speargun fight (${ spearFight.t.toFixed( 1 ) }s) takes a comparable time to the rod fight (${ rodFight.t.toFixed( 1 ) }s)` );
+
+	}
+
+}
+
 // ---- inventory, wallet, save round trip
 const mem = new Map();
 const storage = { getItem: ( k ) => mem.get( k ) ?? null, setItem: ( k, v ) => mem.set( k, v ) };
@@ -131,6 +154,22 @@ ok( s2.addFish( 'grunt', 0.5 ).id > b.id, 'ids keep counting after a load' );
 	ok( st.inventory.length === 0 && st.log.redSnapper.count === 1, 'recordCatch logs fish without adding to cooler' );
 	const stored = st.storeFish( floatFish );
 	ok( stored && st.inventory.length === 1 && st.holdKg === 4.5, 'storeFish transfers float fish to cooler' );
+
+}
+// ---- stone shot: a clean speargun headshot is worth 25% more, and the flag travels with the fish
+{
+
+	const st = new GameState();
+	const plain = fishValue( 'grunt', 0.8 );
+	const stonedFish = st.addFish( 'grunt', 0.8, 12, true );
+	ok( stonedFish.stoned === true && stonedFish.value === Math.round( plain * 1.25 ), 'a stone shot is logged with a 25% value bonus' );
+	ok( st.lastCatch.stoned === true, 'the catch card record also carries the stone shot flag' );
+	const normalFish = st.addFish( 'grunt', 0.8, 12, false );
+	ok( normalFish.stoned === false && normalFish.value === plain, 'a normal catch of the same fish is worth the plain value' );
+	const floatCatch = st.recordCatch( 'yellowtail', 1.0, 12, true );
+	ok( floatCatch.stoned === true && floatCatch.value === Math.round( fishValue( 'yellowtail', 1.0 ) * 1.25 ), 'recordCatch (dive float) applies the same stone shot bonus' );
+	const sale = st.sell( [ stonedFish.id ] );
+	ok( sale.total === stonedFish.value, 'the bonus value is what gets paid out on sale' );
 
 }
 // ---- lengths and the catch card's record logic
