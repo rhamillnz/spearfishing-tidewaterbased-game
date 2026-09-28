@@ -13,7 +13,7 @@ function hash3( i, j, k, s ) {
 
 }
 
-function noise3( x, y, z, s ) {
+export function noise3( x, y, z, s ) {
 
 	const xi = Math.floor( x ), yi = Math.floor( y ), zi = Math.floor( z );
 	const xf = x - xi, yf = y - yi, zf = z - zi;
@@ -28,7 +28,7 @@ function noise3( x, y, z, s ) {
 
 }
 
-function fbm3( x, y, z, oct, s ) {
+export function fbm3( x, y, z, oct, s ) {
 
 	let a = 1, f = 1, sum = 0, n = 0;
 	for ( let o = 0; o < oct; o ++ ) {

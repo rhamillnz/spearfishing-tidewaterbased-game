@@ -36,8 +36,9 @@ fn gpBump( P: vec3f, N: vec3f, height: f32 ) -> vec3f {
 `,
 } );
 
-// extra: { uniforms, vertex, clearcoat } (vertex runs after aux / the rest position are passed on; clearcoat
-// enables the clear-coat lobe, which the carbon / thread patterns use)
+// extra: { uniforms, vertex, surface, clearcoat } (vertex runs after aux / the rest position are passed on;
+// surface runs after the patterns have filled s; clearcoat enables the clear-coat lobe, which the carbon /
+// thread patterns use)
 export function createPropMaterial( name = 'gameProp', extra = {} ) {
 
 	const m = standard( {
@@ -160,7 +161,7 @@ export function createPropMaterial( name = 'gameProp', extra = {} ) {
 	s.roughness = rough;
 	s.metalness = metal;
 	if ( h != 0.0 ) { s.normal = gpBump( P, s.normal, h ); }
-`;
+` + ( extra.surface || '' );
 	return m;
 
 }
