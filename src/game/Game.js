@@ -52,8 +52,8 @@ export class Game {
 		this.bombies = new Bombies( { scene: app.scene, terrain: app.terrainData } );
 		this.diveFloat = new DiveFloat( { scene: app.scene, query: app.query } );
 		this.sharks = [
-			new Shark( { scene: app.scene, terrain: app.terrainData, index: 0, homePos: new Vector3( 25, - 8, - 65 ) } ),
-			new Shark( { scene: app.scene, terrain: app.terrainData, index: 1, homePos: new Vector3( 60, - 12, - 110 ) } ),
+			new Shark( { scene: app.scene, terrain: app.terrainData, index: 0, homePos: new Vector3( 30, - 8, 115 ) } ),
+			new Shark( { scene: app.scene, terrain: app.terrainData, index: 1, homePos: new Vector3( - 30, - 10, 140 ) } ),
 		];
 
 		this.speargun.onFishHit = ( hit ) => {
