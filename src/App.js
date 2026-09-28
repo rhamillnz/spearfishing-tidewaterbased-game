@@ -31,6 +31,7 @@ import { Rocks } from './world/Rocks.js';
 import { Debris } from './world/Debris.js';
 import { Wildlife } from './world/wildlife/Wildlife.js';
 import { Whale } from './world/marine/Whale.js';
+import { Rays } from './world/marine/Rays.js';
 
 import { OceanFFT } from './ocean/OceanFFT.js';
 import { WaterSurface } from './ocean/WaterSurface.js';
@@ -303,6 +304,9 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 			this.whale = null;
 
 		}
+
+		// stingrays and eagle rays cruising the sand flats, reefs and pier (ambient, like the whale)
+		this.rays = new Rays( { scene, terrain: this.terrainData } );
 
 		// interactive wake around the boat (Kelvin pattern, bow/stern waves, prop wash foam)
 		this.wake = new WakeSim( renderer, { terrainGPU: this.terrainGPU, boat: this.boatCtl, colliders: this.colliders } );
@@ -668,6 +672,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		this.village.update( dt );
 		if ( this.vegetation ) this.vegetation.update( dt, this.camera );
 		if ( this.whale ) this.whale.update( dt, this.camera );
+		this.rays.update( dt, this.camera, this.freeCam ? null : this.player );
 		this.boat.update( dt );
 		this.wildlife.update( dt, this.camera, this.freeCam ? null : this.player );
 		this.localLights.update( this.camera, dt );
