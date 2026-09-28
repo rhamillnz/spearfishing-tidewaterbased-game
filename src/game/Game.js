@@ -590,7 +590,7 @@ export class Game {
 		} else {
 
 			this._cardT = 0;
-			if ( ! inp.is( 'KeyE' ) && ! inp.is( 'Mouse0' ) ) this._cardDismissed = false;
+			if ( ! inp.down( 'KeyE' ) && ! inp.mouseDown ) this._cardDismissed = false;
 
 		}
 
