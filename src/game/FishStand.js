@@ -81,6 +81,7 @@ export class FishStand {
 	iceFish() {
 
 		const out = [];
+		// decorative ice-chest display only (not a catch): sizes are unrelated to FishTable's mls
 		const list = [ [ 'jack', 0.36 ], [ 'redSnapper', 0.34 ], [ 'yellowtail', 0.3 ], [ 'grunt', 0.26 ], [ 'mullet', 0.33 ] ];
 		const base = new Matrix4().makeRotationY( STAND.yaw ).setPosition( STAND.x, this.group.position.y, STAND.z );
 		list.forEach( ( [ species, L ], i ) => {
