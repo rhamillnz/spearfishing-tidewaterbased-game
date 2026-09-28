@@ -68,6 +68,18 @@ export class Rays {
 	}
 
 	// player: the Player (position, mode) or null (free camera: nobody in the water to shy away from)
+	// Once the real bombies exist (Game builds them after the app's wildlife), steer around their
+	// actual rock: each pinnacle's widest profile radius replaces the estimated footprint.
+	setBombies( bombies ) {
+
+		const obstacles = bombies.locations.map( ( b ) => ( {
+			x: b.x, z: b.z,
+			radius: b.profile ? Math.max( ...b.profile.map( ( p ) => p.r ) ) : b.radius,
+		} ) );
+		for ( const r of this.rays ) r.brain.obstacles = obstacles;
+
+	}
+
 	update( dt, camera, player = null ) {
 
 		let diver = null;
