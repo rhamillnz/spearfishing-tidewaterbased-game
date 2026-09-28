@@ -6,8 +6,8 @@ import { mulberry32 } from '../util/Noise.js';
 
 // Underwater "Bombies" & Haystack Pinnacles (Iconic Kiwi Reef Formations):
 // - Massive craggy rock towers and haystack hills rising from the seabed up near the surface
-// - Covered with kelp (Ecklonia radiata) on their crowns and ledges, pink coralline paint and
-//   sponges on the walls
+// - Crowns and upper ledges carpeted with kelp (Ecklonia radiata), pale pink-lilac coralline
+//   crusts and a few muted sponges on the walls
 // - Prime habitat for iconic NZ fish: Snapper, Tarakihi, Trevally, Kingfish, Blue Cod, Butterfish
 // - Provide essential cover for spearfishers to stalk and sneak up on skittish trophy fish
 //
@@ -49,6 +49,7 @@ export const BOMBIE_LOCATIONS = [
 
 const ROCK_CEILING = - 1.0; // no rock above this (m, sea level 0)
 const KELP_CEILING = - 0.95; // nor kelp
+const KELP_PER_SITE = 180; // plants (about 38 triangles each)
 const SINK = 1.0; // the foot continues this far into the seabed
 
 // rock surface detail in the shader: grain and pits (the geometry carries the facets and crevices)
@@ -76,7 +77,7 @@ const KELP_VERTEX = /* wgsl */`
 	}
 `;
 const KELP_SURFACE = /* wgsl */`
-	s.translucency = s.albedo * 0.35;
+	s.translucency = s.albedo * 0.25;
 `;
 
 export class Bombies {
@@ -109,7 +110,7 @@ export class Bombies {
 
 		const { rock, kelp } = buildBombiesGeometry( this.locations, heightAt );
 
-		// weathered reef rock, encrusted, pink coralline paint, sponges
+		// weathered reef rock with pale coralline crusts
 		this.material = createPropMaterial( 'bombieRock', { surface: ROCK_SURFACE } );
 		this.mesh = new Mesh( rock, this.material );
 		this.mesh.name = 'Bombies';
@@ -181,9 +182,8 @@ const C = {
 	dark: new Color( 0x3a3833 ),
 	turf: new Color( 0x55552f ), // short algal turf on the tops
 	silt: new Color( 0x857a64 ), // sediment settled on flat ledges
-	coralline: new Color( 0x9c7479 ), // encrusting coralline algae (pink paint)
-	sponge: new Color( 0xb86a2c ),
-	spongeY: new Color( 0xb09a3a ),
+	coralline: new Color( 0x9d8c93 ), // encrusting coralline algae: pale, dusty pink-lilac
+	sponge: new Color( 0x857a60 ), // muted ochre encrusting sponge
 };
 
 // Colour of the rock at world position p with normal n, cavity ao (0..1, 1 = open) and height
@@ -195,15 +195,15 @@ function rockColor( p, n, ao, above, seed ) {
 	// streaky bedding tones
 	c.lerp( C.dark, 0.25 * Math.max( 0, noise3( p.x * 0.05, p.y * 1.1, p.z * 0.05, seed + 1 ) ) );
 	const up = n.y;
-	// coralline paint on the walls and ledges below the canopy
-	const cor = smoothstep( 0.15, 0.35, fbm3( p.x * 0.35, p.y * 0.35, p.z * 0.35, 3, seed + 2 ) ) * smoothstep( - 0.3, 0.2, up );
-	c.lerp( C.coralline, cor * 0.45 );
+	// coralline crusts on the walls and ledges below the canopy: soft-edged, low contrast
+	const cor = smoothstep( - 0.1, 0.45, fbm3( p.x * 0.3, p.y * 0.3, p.z * 0.3, 3, seed + 2 ) ) * smoothstep( - 0.3, 0.2, up );
+	c.lerp( C.coralline, cor * 0.35 );
 	// turf and silt on the flats
 	c.lerp( C.turf, smoothstep( 0.55, 0.85, up ) * 0.55 );
 	c.lerp( C.silt, smoothstep( 0.8, 0.97, up ) * smoothstep( 0.1, 0.45, fbm3( p.x * 0.6, 0, p.z * 0.6, 2, seed + 3 ) ) * 0.6 );
-	// sponges: small bright patches on the walls
-	const sp = noise3( p.x * 1.4, p.y * 1.4, p.z * 1.4, seed + 4 );
-	if ( sp > 0.6 && up < 0.5 ) c.lerp( sp > 0.66 ? C.sponge : C.spongeY, smoothstep( 0.6, 0.68, sp ) * 0.7 );
+	// sponges: small, muted patches on the walls
+	const sp = noise3( p.x * 1.6, p.y * 1.6, p.z * 1.6, seed + 4 );
+	if ( sp > 0.62 && up < 0.5 ) c.lerp( C.sponge, smoothstep( 0.62, 0.75, sp ) * 0.35 );
 	// occlusion: cavities, overhangs and the seabed
 	let occ = ao;
 	occ *= lerp( 0.62, 1, smoothstep( - 0.6, 0.1, up ) );
@@ -251,8 +251,8 @@ function buildCore( site, rng, seed, heightAt ) {
 	const N = 400, arc = [ 0 ];
 	for ( let k = 1; k <= N; k ++ ) arc.push( arc[ k - 1 ] + Math.hypot( ( prof( k / N ) - prof( ( k - 1 ) / N ) ) * r, H / N ) );
 	const L = arc[ N ];
-	const NC = Math.round( Math.max( 44, Math.min( 60, 2 * Math.PI * r * ( 1 + flare ) / 0.6 ) ) );
-	const NR = Math.round( Math.max( 12, Math.min( 44, L / 0.45 ) ) );
+	const NC = Math.round( Math.max( 40, Math.min( 52, 2 * Math.PI * r * ( 1 + flare ) / 0.7 ) ) );
+	const NR = Math.round( Math.max( 12, Math.min( 38, L / 0.52 ) ) );
 	const ringT = [];
 	for ( let i = 0, k = 0; i < NR; i ++ ) {
 
@@ -481,7 +481,7 @@ function buildCore( site, rng, seed, heightAt ) {
 
 	} );
 
-	return { geo, NR, NC, ringT, idxOf, pos, nrm };
+	return { geo, NR, NC, ringT, idxOf, pos, nrm, ds: L / NR };
 
 }
 
@@ -491,10 +491,10 @@ function addBoulders( site, core, rng, seed, heightAt, parts ) {
 
 	const nrmV = new Vector3();
 	let minBuried = 1;
-	const place = ( s, x, z, base, k ) => {
+	const place = ( s, x, z, base, k, subdiv = 2 ) => {
 
 		// base( geo bounds ) -> { y, buried }: the boulder's offset and the fraction below its bed
-		const geo = buildRockGeometry( rng() < 0.6 ? 0 : 1, Math.floor( rng() * 2147483647 ), 2 );
+		const geo = buildRockGeometry( rng() < 0.6 ? 0 : 1, Math.floor( rng() * 2147483647 ), subdiv );
 		geo.applyMatrix4( mat4( 0, 0, 0, ( rng() - 0.5 ) * 0.4, rng() * Math.PI * 2, ( rng() - 0.5 ) * 0.4, s, s * ( 0.6 + rng() * 0.25 ), s * ( 0.8 + rng() * 0.3 ) ) );
 		geo.computeBoundingBox();
 		const bb = geo.boundingBox;
@@ -548,7 +548,7 @@ function addBoulders( site, core, rng, seed, heightAt, parts ) {
 			const h = bb.max.y - bb.min.y;
 			return { y: vy - 0.5 * h - bb.min.y, buried: 0.5 };
 
-		}, 10 + k );
+		}, 10 + k, s < 0.7 ? 1 : 2 ); // small ones coarser: mostly hidden in the kelp
 		k ++;
 
 	}
@@ -572,9 +572,13 @@ function addKelp( site, core, rng, heightAt, kelp ) {
 			const k = core.idxOf( i, j );
 			p.set( core.pos[ k * 3 ], core.pos[ k * 3 + 1 ], core.pos[ k * 3 + 2 ] );
 			n.fromBufferAttribute( core.nrm, k );
-			if ( n.y < 0.35 || p.y > KELP_CEILING - 0.45 ) continue;
+			if ( n.y < 0.2 || p.y > KELP_CEILING - 0.45 ) continue;
 			if ( p.y < heightAt( p.x, p.z ) + 0.2 ) continue; // buried
-			const w = n.y * ( 1 - 0.85 * smoothstep( 5, 14, - p.y ) ) * ( low ? 1 : lerp( 0.2, 1, smoothstep( 0.3, 0.75, core.ringT[ i ] ) ) );
+			// rings near the crown are short and their vertices crowd: keep them in proportion to the
+			// rock area each one stands for (~0.3 m2 per candidate)
+			const area = 2 * Math.PI * Math.hypot( p.x - site.x, p.z - site.z ) / core.NC * core.ds;
+			if ( rng() > area / 0.3 ) continue;
+			const w = smoothstep( 0.2, 0.6, n.y ) * ( 1 - 0.6 * smoothstep( 6, 16, - p.y ) ) * ( low ? 1 : lerp( 0.1, 1, smoothstep( 0.35, 0.7, core.ringT[ i ] ) ) );
 			cand.push( { p: p.clone(), n: n.clone(), w } );
 
 		}
@@ -584,28 +588,28 @@ function addKelp( site, core, rng, heightAt, kelp ) {
 	if ( cand.length === 0 ) return;
 	// the current leans the fronds one way at each site
 	const cur = rng() * Math.PI * 2;
-	const nClumps = Math.min( 26, 6 + Math.round( ( low ? 1.8 : 1.0 ) * site.radius + site.height * 0.6 ) );
-	const centres = [];
-	for ( let tries = 0; tries < 400 && centres.length < nClumps; tries ++ ) {
-
-		const c = cand[ Math.floor( rng() * cand.length ) ];
-		if ( rng() < c.w && centres.every( ( o ) => o.p.distanceTo( c.p ) > 1.3 ) ) centres.push( c );
-
-	}
-
+	// the plant budget goes to the best ground first (crowns and upper shoulders, in patches
+	// broken by bare rock), packed shoulder to shoulder: two plants per grid vertex (~0.3 m2; one on the broad
+	// low reefs, to spread the budget over them)
+	const patch = 77 + Math.round( cur * 10 );
+	// (the broad low reefs: smaller patches, kina barrens between them)
+	const pf = low ? 0.7 : 0.35;
+	const p0 = low ? - 0.3 : - 0.65;
+	for ( const c of cand ) c.score = c.w * smoothstep( p0, p0 + 0.5, noise3( c.p.x * pf, c.p.y * pf, c.p.z * pf, patch ) ) * ( 0.75 + 0.25 * rng() );
+	cand.sort( ( a, b ) => b.score - a.score );
 	const jit = new Vector3();
-	for ( const c of centres ) {
+	let planted = 0;
+	for ( const a of cand ) {
 
-		const near = cand.filter( ( o ) => o.p.distanceTo( c.p ) < 1.1 );
-		const nPlants = Math.round( ( 3 + rng() * 6 ) * Math.max( 0.4, c.w ) );
-		for ( let k = 0; k < nPlants; k ++ ) {
+		if ( a.score < 0.15 || planted >= KELP_PER_SITE ) break;
+		for ( let k = 0; k < ( low ? 1 : 2 ); k ++ ) {
 
-			const a = k === 0 ? c : near[ Math.floor( rng() * near.length ) ];
-			// a little jitter across the facet, the holdfast pressed into the rock
-			jit.set( rng() - 0.5, 0, rng() - 0.5 ).multiplyScalar( 0.35 );
+			// jitter across the facet, the holdfast pressed into the rock
+			jit.set( rng() - 0.5, 0, rng() - 0.5 ).multiplyScalar( 0.55 );
 			jit.addScaledVector( a.n, - jit.dot( a.n ) );
 			const anchor = a.p.clone().add( jit ).addScaledVector( a.n, - 0.06 );
 			kelp.plant( anchor, a.n, cur + ( rng() - 0.5 ) * 0.9, rng );
+			planted ++;
 
 		}
 
@@ -615,10 +619,10 @@ function addKelp( site, core, rng, heightAt, kelp ) {
 
 // Kelp meshes: stipe tubes and ribbon laminae written straight into flat arrays (hundreds of
 // small parts; the layout matches prepare(): position, normal, uv, color, aux)
-const KELP_STIPE = 0x3a2e16;
-const KELP_FROND = 0x574216;
-const KELP_BLADE = 0x503c14;
-const KELP_TIP = 0x6e5626;
+const KELP_STIPE = 0x3a3416;
+const KELP_FROND = 0x4b4011;
+const KELP_BLADE = 0x453a0f;
+const KELP_TIP = 0x5f5016;
 
 class KelpBuilder {
 
@@ -712,26 +716,25 @@ class KelpBuilder {
 		const tint = ( hex, f = 1 ) => linearColor( hex ).clone().multiplyScalar( tone * f );
 
 		// stipe: 0.3 - 0.8 m, slightly curved, leaning off the rock
-		const stipeL = 0.3 + rng() * 0.4;
+		const stipeL = 0.15 + rng() * 0.25;
 		const d0 = up.clone().addScaledVector( rn, 0.3 ).addScaledVector( flow, 0.15 + rng() * 0.2 );
 		d0.x += ( rng() - 0.5 ) * 0.3; d0.z += ( rng() - 0.5 ) * 0.3;
 		d0.normalize();
 		const sp = [], sr = [], sw = [];
-		for ( let k = 0; k <= 2; k ++ ) {
+		for ( let k = 0; k <= 1; k ++ ) {
 
-			const t = k / 2;
-			sp.push( anchor.clone().addScaledVector( d0, stipeL * t ).addScaledVector( flow, 0.05 * t * t ) );
-			sr.push( lerp( 0.024, 0.014, t ) );
-			sw.push( 0.12 * t * t );
+			sp.push( anchor.clone().addScaledVector( d0, stipeL * k ) );
+			sr.push( lerp( 0.022, 0.014, k ) );
+			sw.push( 0.1 * k );
 
 		}
 
-		this.tube( sp, sr, 4, tint( KELP_STIPE ), sw, 0.7 );
+		this.tube( sp, sr, 3, tint( KELP_STIPE ), sw, 0.7 );
 
 		// primary lamina: from the stipe top, arching over downstream and drooping at the tip
-		const frondL = 0.6 + rng() * 0.5;
-		const segs = 5;
-		const top = sp[ 2 ];
+		const frondL = 0.6 + rng() * 0.4;
+		const segs = 4;
+		const top = sp[ 1 ];
 		const e0 = Math.asin( Math.max( - 1, Math.min( 1, d0.y ) ) ); // elevation of the stipe
 		const e1 = - 0.15 - rng() * 0.5;
 		const twist = ( rng() - 0.5 ) * 1.2;
@@ -749,20 +752,20 @@ class KelpBuilder {
 			side.applyAxisAngle( dir, twist * u );
 			fd.push( dir.clone() );
 			fs.push( side.clone() );
-			fh.push( 0.5 * ( 0.02 + 0.11 * smoothstep( 0, 0.2, u ) * ( 1 - 0.55 * u ) ) );
+			fh.push( 0.5 * ( 0.025 + 0.11 * smoothstep( 0, 0.25, u ) * ( 1 - 0.5 * u ) ) );
 			fc.push( tint( KELP_FROND ).lerp( tint( KELP_TIP ), u * u ) );
-			fw.push( 0.12 + 0.88 * u );
+			fw.push( 0.1 + 0.9 * u );
 
 		}
 
-		this.ribbon( fp, fs, fh, fc, fw, 0.55 );
+		this.ribbon( fp, fs, fh, fc, fw, 0.7 );
 
 		// lateral blades: alternating along both edges, longest mid-frond, angled forward,
 		// curling back toward the frond and drooping at the tips
-		const nBlades = 7 + Math.floor( rng() * 6 );
+		const nBlades = 5 + Math.floor( rng() * 3 );
 		for ( let b = 0; b < nBlades; b ++ ) {
 
-			const u = 0.15 + 0.75 * ( b + rng() * 0.6 ) / nBlades;
+			const u = 0.1 + 0.75 * ( b + rng() * 0.6 ) / nBlades;
 			const k = Math.min( segs - 1, Math.floor( u * segs ) ), f = u * segs - k;
 			const base = fp[ k ].clone().lerp( fp[ k + 1 ], f );
 			const fdir = fd[ k ].clone().lerp( fd[ k + 1 ], f ).normalize();
@@ -771,31 +774,32 @@ class KelpBuilder {
 			const lr = b % 2 === 0 ? 1 : - 1;
 			const hwF = fh[ k ] + ( fh[ k + 1 ] - fh[ k ] ) * f;
 			base.addScaledVector( fside, lr * hwF * 0.7 );
-			const bl = ( 0.3 + rng() * 0.25 ) * ( 1 - 0.7 * Math.abs( u - 0.5 ) ) * ( frondL / 0.85 );
+			const bl = ( 0.4 + rng() * 0.25 ) * ( 1 - 0.6 * Math.abs( u - 0.45 ) ) * ( frondL / 0.8 );
 			const ang = 0.35 + rng() * 0.4;
 			const lift = ( rng() - 0.3 ) * 0.5;
 			const w0 = fw[ k ] + ( fw[ k + 1 ] - fw[ k ] ) * f;
 			const bp = [ base ], bs = [], bh = [], bc = [], bw = [];
 			const bdir = new Vector3(), bside = new Vector3();
 			const bsegs = 2;
-			const roll = ( rng() - 0.5 ) * 1.6; // blades twist out of the frond's plane
+			const roll0 = ( rng() - 0.5 ) * 1.4, roll = ( rng() - 0.5 ) * 1.2; // blades twist out of the frond's plane
+			const bw0 = 0.06 + 0.03 * rng(); // 6 - 9 cm at the widest
 			const bladeC = tint( KELP_BLADE, 0.9 + rng() * 0.2 );
 			for ( let s = 0; s <= bsegs; s ++ ) {
 
 				const t = s / bsegs;
 				const a = ang * ( 1 - 0.45 * t );
-				bdir.copy( fdir ).multiplyScalar( Math.cos( a ) ).addScaledVector( fside, lr * Math.sin( a ) ).addScaledVector( fnorm, lift * ( 1 - t ) - 0.35 * t * t ).normalize();
+				bdir.copy( fdir ).multiplyScalar( Math.cos( a ) ).addScaledVector( fside, lr * Math.sin( a ) ).addScaledVector( fnorm, lift * ( 1 - t ) - 0.6 * t * t ).normalize();
 				if ( s > 0 ) bp.push( bp[ s - 1 ].clone().addScaledVector( bdir, bl / bsegs ) );
-				bside.crossVectors( bdir, fnorm ).normalize().applyAxisAngle( bdir, roll * t );
+				bside.crossVectors( bdir, fnorm ).normalize().applyAxisAngle( bdir, roll0 + roll * t );
 				bs.push( bside.clone() );
-				// narrow stalk, widest a third along, pointed tip
-				bh.push( 0.5 * Math.min( 0.09, bl * 0.34 ) * ( t < 0.3 ? lerp( 0.3, 1, t / 0.3 ) : lerp( 1, 0.1, ( t - 0.3 ) / 0.7 ) ) );
+				// narrow stalk, widest halfway, blunt tip
+				bh.push( 0.5 * bw0 * ( t < 0.5 ? lerp( 0.35, 1, t / 0.5 ) : lerp( 1, 0.45, ( t - 0.5 ) / 0.5 ) ) );
 				bc.push( bladeC.clone().lerp( tint( KELP_TIP ), t * 0.6 ) );
 				bw.push( w0 + 0.3 * t );
 
 			}
 
-			this.ribbon( bp, bs, bh, bc, bw, 0.55 );
+			this.ribbon( bp, bs, bh, bc, bw, 0.7 );
 
 		}
 
