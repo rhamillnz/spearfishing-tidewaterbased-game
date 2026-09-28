@@ -792,7 +792,7 @@ export class Game {
 
 		const cover = ( p.mode === 'swim' ) ? this.bombies.checkCover( p.position ) : null;
 		const coverTag = cover ? `   ·   🪨 In Cover: ${ cover.name }` : '';
-		const floatTag = ( p.mode === 'swim' ) ? `   ·   🛟 Float deployed: [E] stash (${ this.diveFloat.totalKg.toFixed( 1 ) }/15kg)` : '';
+		const floatTag = ( p.mode === 'swim' ) ? `   ·   🛟 Float deployed: [E] stash (${ this.diveFloat.totalKg.toFixed( 1 ) }/${ this.diveFloat.maxKg }kg)` : '';
 
 		if ( this.weapon === 'speargun' ) {
 
@@ -939,7 +939,7 @@ export class Game {
 			const target = onBoat ? 'Boat Cooler' : 'Cooler';
 			if ( leftover.length === 0 ) {
 
-				this.toast( `✅ Transferred ${ transferred } fish (${ transferredKg.toFixed( 1 ) } kg) from Float into ${ target }! Float emptied (0 / 15 kg).`, 4200 );
+				this.toast( `✅ Transferred ${ transferred } fish (${ transferredKg.toFixed( 1 ) } kg) from Float into ${ target }! Float emptied (0 / ${ this.diveFloat.maxKg } kg).`, 4200 );
 
 			} else {
 

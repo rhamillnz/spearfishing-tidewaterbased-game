@@ -22,7 +22,7 @@ export class DiveFloat {
 		this.waterY = 0;
 		this.active = false;
 		this.stashedFish = [];
-		this.maxKg = 15.0; // 15kg portable dive float locker capacity
+		this.maxKg = 30.0; // portable dive float locker capacity (kg) - a single trophy kingfish can run to ~28 kg
 
 		// 3D Torpedo Float Mesh
 		this.material = createPropMaterial( 'diveFloat' );

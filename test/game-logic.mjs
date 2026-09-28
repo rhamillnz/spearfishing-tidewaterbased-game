@@ -70,6 +70,31 @@ for ( const id of FISH_IDS ) {
 }
 ok( fishValue( 'redSnapper', 5 ) > fishValue( 'redSnapper', 2 ), 'bigger fish is worth more' );
 
+// ---- NZ recreational minimum legal size (mls, cm): nothing the game can generate is undersized.
+// kg[ 0 ] is the smallest a rod/spear catch can be (Bites.rollWeight and Game.onFishHit's clamp
+// never go below it), so it alone has to map to a length at or above the species' mls.
+for ( const id of FISH_IDS ) {
+
+	const f = FISH[ id ];
+	if ( f.mls == null ) continue;
+	const lenAtMin = fishLengthCm( id, f.kg[ 0 ] );
+	ok( lenAtMin >= f.mls, `${ id }: the smallest catchable weight (${ f.kg[ 0 ] } kg) is a legal ${ lenAtMin.toFixed( 1 ) } cm, at or above the ${ f.mls } cm mls` );
+	// and a spread of rolled weights all stay legal too
+	let allLegal = true;
+	for ( let i = 0; i < 200; i ++ ) if ( fishLengthCm( id, rollWeight( id, rng ) ) < f.mls - 1e-6 ) allLegal = false;
+	ok( allLegal, `${ id }: 200 rolled weights are all at or above the ${ f.mls } cm mls` );
+
+}
+// kingfish ("king fish are really big"): a good sized one should typically be an 8-25 kg fish
+{
+
+	let inRange = 0, n = 3000;
+	for ( let i = 0; i < n; i ++ ) { const kg = rollWeight( 'yellowtail', rng ); if ( kg >= 8 && kg <= 25 ) inRange ++; }
+	ok( inRange / n > 0.4, `a good sized kingfish (8-25 kg) is a common roll (${ ( 100 * inRange / n ).toFixed( 0 ) }%)` );
+	ok( FISH.yellowtail.kg[ 0 ] >= 5 && FISH.yellowtail.kg[ 1 ] >= 25, 'kingfish weight range covers a real 10-20+ kg fish' );
+
+}
+
 // ---- the fight: three players
 const policies = {
 	careful: ( g ) => g.tension < 0.68 && g.surge < 0.6,
@@ -85,7 +110,7 @@ const fight = ( species, kg, policy, lineKg = 7, reelSpeed = 1.1 ) => {
 
 };
 const table = {};
-for ( const [ species, kg ] of [ [ 'grunt', 0.8 ], [ 'yellowtail', 1.2 ], [ 'jack', 6 ], [ 'redSnapper', 5 ], [ 'tuna', 6 ], [ 'tuna', 13 ], [ 'tarpon', 35 ] ] ) {
+for ( const [ species, kg ] of [ [ 'grunt', 0.8 ], [ 'yellowtail', 6 ], [ 'jack', 3 ], [ 'redSnapper', 5 ], [ 'tuna', 10 ], [ 'tuna', 20 ], [ 'tarpon', 6.5 ] ] ) {
 
 	for ( const p of Object.keys( policies ) ) {
 
@@ -97,12 +122,14 @@ for ( const [ species, kg ] of [ [ 'grunt', 0.8 ], [ 'yellowtail', 1.2 ], [ 'jac
 
 }
 ok( table[ 'grunt/careful' ].st === 'caught' && table[ 'yellowtail/careful' ].st === 'caught', 'careful reeling lands small fish' );
-ok( table[ 'jack/careful' ].st === 'caught', 'careful reeling lands a 6 kg jack on the starter line' );
+ok( table[ 'jack/careful' ].st === 'caught', 'careful reeling lands a 3 kg jack on the starter line' );
 ok( table[ 'tuna/mash' ].st === 'snapped' && table[ 'tarpon/mash' ].st === 'snapped', 'holding reel on a big fish snaps the line' );
-ok( table[ 'tuna/careful' ].st !== 'caught' && fight( 'tuna', 13, policies.careful, 26, 1.6 ).st === 'caught', 'a 13 kg tuna needs the 30 lb line' );
+ok( table[ 'tuna/careful' ].st !== 'caught' && fight( 'tuna', 20, policies.careful, 26, 1.6 ).st === 'caught', 'a 20 kg tuna needs the 30 lb line' );
 ok( [ 'escaped' ].includes( table[ 'grunt/idle' ].st ), 'never reeling loses the fish' );
-ok( fight( 'tarpon', 35, policies.careful ).st !== 'caught', 'a 35 kg tarpon beats the starter line' );
-ok( fight( 'tarpon', 35, policies.careful, 50, 2.2 ).st === 'caught', 'the top line and reel land it' );
+// unlike the old (unrealistically huge) "tarpon" weights, a real kahawai - even a near-record
+// 7 kg one - is landable on the starter gear with careful play; it's the tuna above that needs
+// the top line and reel
+ok( fight( 'tarpon', 7, policies.careful ).st === 'caught', 'even a near-record 7 kg kahawai is catchable on the starter line' );
 
 // ---- the speargun fight matches the rod: same CatchMinigame, a shooting line / reel speed in the
 // rod's own starter range (Gear.js speargun levels), so a given fish fights comparably either way
@@ -133,9 +160,9 @@ const storage = { getItem: ( k ) => mem.get( k ) ?? null, setItem: ( k, v ) => m
 const s = new GameState( storage );
 ok( s.stats.holdKg === 30, 'cooler holds 30 kg' );
 const a = s.addFish( 'grunt', 0.84, 9.5 );
-const b = s.addFish( 'yellowtail', 1.31, 10 );
+const b = s.addFish( 'yellowtail', 6, 10 );
 ok( a && b && s.inventory.length === 2, 'fish go into the cooler' );
-ok( s.addFish( 'tarpon', 40, 22 ) === null && s.log.tarpon.count === 1, 'a fish too big for the hold is logged but not kept' );
+ok( s.addFish( 'tuna', 32, 22 ) === null && s.log.tuna.count === 1, 'a fish too big for the hold is logged but not kept' );
 const value = s.holdValue;
 const sale = s.sell( [ a.id ] );
 ok( sale.count === 1 && s.money === a.value && s.inventory.length === 1, 'selling one fish pays for it' );
@@ -188,15 +215,15 @@ ok( s2.addFish( 'grunt', 0.5 ).id > b.id, 'ids keep counting after a load' );
 	ok( Math.abs( fishLengthCm( 'mahi', 10 ) - 108 ) < 3 && Math.abs( fishLengthCm( 'grunt', 0.84 ) - 36 ) < 2, 'length-weight: a 10 kg mahi ~108 cm, a 0.84 kg grunt ~36 cm' );
 	const m = new Map();
 	const st = new GameState( { getItem: ( k ) => m.get( k ) ?? null, setItem: ( k, v ) => m.set( k, v ) } );
-	const c1 = st.addFish( 'jack', 3.2 ), i1 = st.lastCatch;
+	const c1 = st.addFish( 'jack', 2.2 ), i1 = st.lastCatch;
 	ok( c1 && i1.newSpecies && ! i1.record && c1.cm === i1.cm && i1.cm > 50, 'first of a species: new species, not a record, length stored' );
-	st.addFish( 'jack', 2.1 );
+	st.addFish( 'jack', 1.5 );
 	const i2 = st.lastCatch;
-	ok( ! i2.newSpecies && ! i2.record && i2.prevBestKg === 3.2 && st.log.jack.bestKg === 3.2, 'a smaller one: no record, best unchanged' );
-	st.addFish( 'jack', 4.05 );
+	ok( ! i2.newSpecies && ! i2.record && i2.prevBestKg === 2.2 && st.log.jack.bestKg === 2.2, 'a smaller one: no record, best unchanged' );
+	st.addFish( 'jack', 3 );
 	const i3 = st.lastCatch;
-	ok( i3.record && i3.prevBestKg === 3.2 && i3.prevBestCm === i1.cm && st.log.jack.bestKg === 4.05 && st.log.jack.bestCm === i3.cm, 'a bigger one: new record, previous best reported, log updated' );
-	st.addFish( 'tarpon', 40 );
+	ok( i3.record && i3.prevBestKg === 2.2 && i3.prevBestCm === i1.cm && st.log.jack.bestKg === 3 && st.log.jack.bestCm === i3.cm, 'a bigger one: new record, previous best reported, log updated' );
+	st.addFish( 'tuna', 32 );
 	ok( st.lastCatch.kept === false && st.lastCatch.newSpecies, 'a fish that does not fit: logged, card says released' );
 	// a save from before lengths: inventory and log get lengths on load
 	const old = { v: 1, money: 5, inventory: [ { id: 1, species: 'grunt', kg: 0.84, value: 6, caughtAt: 9 } ], log: { grunt: { count: 1, bestKg: 0.84 } }, upgrades: {}, fuel: null, nextId: 2 };

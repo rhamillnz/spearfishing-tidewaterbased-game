@@ -631,7 +631,7 @@ export class GameHUD {
 								<span class="gm-guide-name"><span class="gm-guide-check">✓</span>${ f.name }</span>
 								<span class="gm-guide-stats">Best: ${ log.bestKg.toFixed( 2 ) } kg · ${ log.bestCm ?? Math.round( fishLengthCm( id, log.bestKg ) ) } cm</span>
 							</div>
-							<div class="gm-guide-sci">${ f.sci || '' } · Caught: ${ log.count }</div>
+							<div class="gm-guide-sci">${ f.sci || '' } · Caught: ${ log.count }${ f.mls ? ` · MLS: ${ f.mls } cm` : '' }</div>
 							<div class="gm-guide-hint">${ habitatHint( f.habitat ) }</div>
 						</div>`;
 
@@ -643,7 +643,7 @@ export class GameHUD {
 								<span class="gm-guide-name is-locked">? ${ f.name }</span>
 								<span class="gm-guide-stats" style="color:var(--tw-ink-3)">Undiscovered</span>
 							</div>
-							<div class="gm-guide-sci">${ f.sci || '' }</div>
+							<div class="gm-guide-sci">${ f.sci || '' }${ f.mls ? ` · MLS: ${ f.mls } cm` : '' }</div>
 							<div class="gm-guide-hint">${ habitatHint( f.habitat ) }</div>
 						</div>`;
 
