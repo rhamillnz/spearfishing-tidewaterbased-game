@@ -3,9 +3,13 @@ import { prepare, mergePrepared, sphere, roundedBox, loft, paintVertices, mat4 }
 import { createPropMaterial, PAT } from '../game/GameMaterials.js';
 
 // Procedural Bronze Whaler / Reef Shark:
-// - Cruising in deep reef water and drop-offs
-// - Attracted by speared fish (blood / distress vibrations)
-// - Circles the diver to snatch un-stashed fish
+// - Cruises far out in deep reef water and drop-offs, minding its own business
+// - Once the diver has proven a competent spearo (landed a few fish), one shark at a time will
+//   come in and run an ENCOUNTER: circle the dive float (or the diver, if no float is out) for a
+//   while, maybe steal an unattended fish, then make a few bluff charges at the diver to get their
+//   attention. If it's never poked off, it snatches the diver's held fish and leaves; a poke at any
+//   point sends it fleeing immediately. Either way it's then satisfied and stays away until the
+//   diver lands another batch of fish.
 // - Can be poked on the snout with the spear tip to fend off and repel!
 //
 // The body is three meshes (head + trunk, mid body, tail) hinged at PIVOTS so the tail can sweep
@@ -23,6 +27,26 @@ const _up = new Vector3( 0, 1, 0 );
 const MIN_SEABED = - 2.5; // sharks keep to water with the seabed deeper than this (m)
 const PIVOTS = [ 0.02, 0.6 ]; // z of the mid-body and tail hinges
 
+// ---- Encounter tuning (see Game.js for the "one shark at a time / every 4 landed fish" gating)
+const CRUISE_SPEED = 1.8;
+const ENGAGE_RADIUS = 40;          // (m) a hungry cruising shark within this range of the target may start an encounter
+const APPROACH_SPEED = 3.2;
+const CIRCLE_RADIUS_FLOAT = 11;    // circling radius around the dive float
+const CIRCLE_RADIUS_PLAYER = 13.5; // circling radius around the diver when there's no float out (12-15m)
+const CIRCLE_SPEED = 2.6;
+const CIRCLE_TIME_MIN = 30, CIRCLE_TIME_MAX = 60; // seconds spent circling before the charges begin
+const THEFT_MIN_PLAYER_DIST = 15;  // the diver must be at least this far from the float for a theft
+const THEFT_DELAY = 6;             // seconds of eligible circling before a theft is attempted
+const CHARGE_SPEED = 6.5;
+const CHARGE_MIN_RANGE = 1.8, CHARGE_MAX_RANGE = 2.5; // how close a bluff charge presses in (inside poke range)
+const CHARGES_MIN = 2, CHARGES_MAX = 3;
+const PEEL_SPEED = 4.5;
+const PEEL_TIME = 1.7;
+const SNATCH_APPROACH_SPEED = 3.2;
+const SNATCH_TIMEOUT = 6; // give up waiting on a snatch resolution after this long (diver got away)
+const POKE_FLEE_SPEED = 6.5, POKE_FLEE_TIME = 12.0;
+const SNATCH_FLEE_SPEED = 7.0, SNATCH_FLEE_TIME = 10.0;
+
 export class Shark {
 
 	constructor( { scene, terrain, index = 0, homePos = new Vector3( 20, - 8, 110 ) } ) {
@@ -37,12 +61,27 @@ export class Shark {
 		this.heading = new Vector3( 1, 0, 0 );
 		this.quaternion = new Quaternion();
 
-		this.state = 'cruise'; // 'cruise', 'stalk', 'lunge', 'flee'
-		this.speed = 2.2;
+		// 'cruise' (default, far off, harmless) -> 'approach' -> 'circleFloat' -> 'charge' <-> 'peel'
+		// (repeats for a few charges) -> 'snatch' (waiting on Game.js to resolve) -> 'flee' -> 'cruise'.
+		// A poke() forces 'flee' from any state.
+		this.state = 'cruise';
+		this.engaged = false; // true for the whole encounter (approach..flee); Game.js only lets one shark engage at a time
+		this.speed = CRUISE_SPEED;
 		this.timer = 0;
+		this.encounterTimer = 0;
 		this.tailPhase = Math.random() * Math.PI * 2;
 		this.fleeTimer = 0;
 		this.circleAngle = Math.random() * Math.PI * 2;
+
+		// encounter bookkeeping
+		this.stolenFish = false;   // theft already used this encounter (at most one per encounter)
+		this.wantsToSteal = false; // Game.js reads this each frame and, if it acts on it, calls markStolen()
+		this._stealClock = THEFT_DELAY;
+		this.chargesTotal = 0;
+		this.chargesDone = 0;
+		this.chargeRange = CHARGE_MIN_RANGE;
+		this.peelDir = new Vector3( 1, 0, 0 );
+		this._snatchClock = 0;
 
 		// 3D Mesh: [ head + trunk, mid body, tail ]
 		this.material = createPropMaterial( `shark_${index}` );
@@ -63,31 +102,66 @@ export class Shark {
 
 	poke() {
 
-		// Repel shark when poked with spear tip!
+		// Repel shark when poked with spear tip! Ends the encounter immediately, whatever it was doing.
 		this.state = 'flee';
-		this.fleeTimer = 12.0; // Flees for 12 seconds
-		this.speed = 6.5;      // Bursts away
+		this.fleeTimer = POKE_FLEE_TIME;
+		this.speed = POKE_FLEE_SPEED;
 		return true;
 
 	}
 
 	snatch() {
 
-		// Snatch fish from diver and flee
+		// Snatch fish from diver and flee (Game.js calls this once it has actually removed the fish)
 		this.state = 'flee';
-		this.fleeTimer = 10.0;
-		this.speed = 7.0;
+		this.fleeTimer = SNATCH_FLEE_TIME;
+		this.speed = SNATCH_FLEE_SPEED;
 		return true;
 
 	}
 
-	update( dt, { playerPos, playerInWater, spearedFish } ) {
+	// Game.js calls this once it has actually removed a fish from the float in response to wantsToSteal
+	markStolen() {
+
+		this.stolenFish = true;
+		this.wantsToSteal = false;
+		this._stealClock = THEFT_DELAY;
+
+	}
+
+	// Encounter over with nothing resolved (diver got out of the water, etc): back to harmless cruising.
+	disengage() {
+
+		this.state = 'cruise';
+		this.engaged = false;
+		this.speed = CRUISE_SPEED;
+
+	}
+
+	_beginEncounter() {
+
+		this.state = 'approach';
+		this.engaged = true;
+		this.stolenFish = false;
+		this.wantsToSteal = false;
+		this._stealClock = THEFT_DELAY;
+		this.chargesTotal = 0;
+		this.chargesDone = 0;
+		this._snatchClock = 0;
+
+	}
+
+	update( dt, { playerPos, playerInWater, allowEngage = false, floatActive = false, floatPos = null } ) {
 
 		this.timer += dt;
 		this.tailPhase += dt * ( 1.2 + this.speed * 1.1 );
 
 		const pPos = playerPos;
 		const distToPlayer = this.position.distanceTo( pPos );
+		const target = ( floatActive && floatPos ) ? floatPos : pPos;
+
+		// The diver left the water mid-encounter: let the shark lose interest gracefully.
+		if ( this.engaged && this.state !== 'flee' && ! playerInWater ) this.disengage();
 
 		// ---- AI Behavior State Machine
 		if ( this.state === 'flee' ) {
@@ -101,40 +175,125 @@ export class Shark {
 			if ( this.fleeTimer <= 0 ) {
 
 				this.state = 'cruise';
-				this.speed = 2.2;
+				this.engaged = false;
+				this.speed = CRUISE_SPEED;
 
 			}
 
-		} else if ( spearedFish && playerInWater && distToPlayer < 45 ) {
+		} else if ( this.state === 'approach' ) {
 
-			// Blood in the water! Shark is attracted and approaches diver
-			this.state = 'stalk';
-			this.speed = 3.4;
+			this.speed = APPROACH_SPEED;
+			const circleR = floatActive ? CIRCLE_RADIUS_FLOAT : CIRCLE_RADIUS_PLAYER;
+			if ( this.position.distanceTo( target ) <= circleR + 1 ) {
 
-			if ( distToPlayer > 5.5 ) {
-
-				// Move toward player
-				_v.copy( pPos ).sub( this.position ).normalize();
-				this.heading.lerp( _v, 1 - Math.exp( - dt * 2.5 ) ).normalize();
+				this.state = 'circleFloat';
+				// start the circle from wherever the shark already is (not a random point on the ring):
+				// a random pick could sit diametrically opposite and send it cutting straight past the target
+				this.circleAngle = Math.atan2( this.position.z - target.z, this.position.x - target.x );
+				this.encounterTimer = MathUtils.lerp( CIRCLE_TIME_MIN, CIRCLE_TIME_MAX, Math.random() );
 
 			} else {
 
-				// Circle tightly around the player (radius 4-5m) looking for an opening
-				this.circleAngle += dt * 0.9;
-				const targetX = pPos.x + Math.cos( this.circleAngle ) * 4.5;
-				const targetZ = pPos.z + Math.sin( this.circleAngle ) * 4.5;
-				const targetY = Math.max( - 18, Math.min( - 1.5, pPos.y - 0.8 ) );
-
-				_v.set( targetX, targetY, targetZ ).sub( this.position ).normalize();
-				this.heading.lerp( _v, 1 - Math.exp( - dt * 4 ) ).normalize();
+				_v.copy( target ).sub( this.position ).normalize();
+				this.heading.lerp( _v, 1 - Math.exp( - dt * 2 ) ).normalize();
 
 			}
 
+		} else if ( this.state === 'circleFloat' ) {
+
+			this.speed = CIRCLE_SPEED;
+			this.encounterTimer -= dt;
+
+			this.circleAngle += dt * 0.5;
+			const r = floatActive ? CIRCLE_RADIUS_FLOAT : CIRCLE_RADIUS_PLAYER;
+			const tx = target.x + Math.cos( this.circleAngle ) * r;
+			const tz = target.z + Math.sin( this.circleAngle ) * r;
+			const ty = Math.max( - 18, Math.min( - 1.2, target.y - 1.5 ) );
+			_v.set( tx, ty, tz ).sub( this.position ).normalize();
+			this.heading.lerp( _v, 1 - Math.exp( - dt * 2.5 ) ).normalize();
+
+			// While circling the float, if the diver has drifted well away, it's an opening for a theft
+			const eligible = floatActive && ! this.stolenFish && pPos.distanceTo( floatPos ) > THEFT_MIN_PLAYER_DIST;
+			if ( eligible ) {
+
+				this._stealClock -= dt;
+				if ( this._stealClock <= 0 ) this.wantsToSteal = true;
+
+			} else {
+
+				this._stealClock = THEFT_DELAY;
+				this.wantsToSteal = false;
+
+			}
+
+			if ( this.encounterTimer <= 0 ) {
+
+				this.state = 'charge';
+				this.chargesTotal = CHARGES_MIN + Math.floor( Math.random() * ( CHARGES_MAX - CHARGES_MIN + 1 ) );
+				this.chargesDone = 0;
+				this.chargeRange = MathUtils.lerp( CHARGE_MIN_RANGE, CHARGE_MAX_RANGE, Math.random() );
+
+			}
+
+		} else if ( this.state === 'charge' ) {
+
+			this.speed = CHARGE_SPEED;
+			_v.copy( pPos ).sub( this.position ).normalize();
+			this.heading.lerp( _v, 1 - Math.exp( - dt * 6 ) ).normalize();
+
+			if ( distToPlayer <= this.chargeRange ) {
+
+				this.chargesDone ++;
+				this.state = 'peel';
+				this.encounterTimer = PEEL_TIME;
+
+				// peel off to one side and loop back around
+				_v.copy( this.position ).sub( pPos );
+				_v.y = 0;
+				if ( _v.lengthSq() < 1e-6 ) _v.set( 1, 0, 0 );
+				_v.normalize().applyAxisAngle( _up, ( Math.random() < 0.5 ? 1 : - 1 ) * Math.PI * 0.35 );
+				this.peelDir.copy( _v );
+
+			}
+
+		} else if ( this.state === 'peel' ) {
+
+			this.speed = PEEL_SPEED;
+			this.encounterTimer -= dt;
+			this.heading.lerp( this.peelDir, 1 - Math.exp( - dt * 4 ) ).normalize();
+
+			if ( this.encounterTimer <= 0 ) {
+
+				if ( this.chargesDone < this.chargesTotal ) {
+
+					this.state = 'charge';
+					this.chargeRange = MathUtils.lerp( CHARGE_MIN_RANGE, CHARGE_MAX_RANGE, Math.random() );
+
+				} else {
+
+					this.state = 'snatch';
+					this._snatchClock = 0;
+
+				}
+
+			}
+
+		} else if ( this.state === 'snatch' ) {
+
+			// Charges are done: close in and hold near the diver while Game.js decides whether there's
+			// a held fish to actually snatch (it calls snatch() to resolve, or disengage() if not).
+			this.speed = SNATCH_APPROACH_SPEED;
+			_v.copy( pPos ).sub( this.position ).normalize();
+			this.heading.lerp( _v, 1 - Math.exp( - dt * 3 ) ).normalize();
+
+			this._snatchClock += dt;
+			if ( this._snatchClock > SNATCH_TIMEOUT ) this.disengage();
+
 		} else {
 
-			// Peaceful cruising in deep reef/bay
+			// Peaceful cruising in deep reef/bay, far from any encounter
 			this.state = 'cruise';
-			this.speed = 1.8;
+			this.speed = CRUISE_SPEED;
 
 			// Patrol around home territory in wide lazy loop
 			const dHome = this.position.distanceTo( this.home );
@@ -150,6 +309,9 @@ export class Shark {
 				this.heading.applyAxisAngle( _up, wander ).normalize();
 
 			}
+
+			// A hungry, unengaged shark close enough to the target may start an encounter
+			if ( allowEngage && this.position.distanceTo( target ) < ENGAGE_RADIUS ) this._beginEncounter();
 
 		}
 

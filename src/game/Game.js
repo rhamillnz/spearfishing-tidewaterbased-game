@@ -23,6 +23,11 @@ const CATCH_CARD_MS = 9000;
 // instant kill, no fight, straight through the head
 const STONE_SHOT_FRAC = 0.7;
 
+// sharks stay well clear until the diver has landed this many speared fish (reset after each encounter)
+const SHARK_ENGAGE_LANDINGS = 4;
+const SHARK_SNATCH_RANGE = 2.4; // (m) how close the shark must get to actually snatch a held fish
+const SHARK_CHARGE_TOAST_S = 3.0; // throttle for the "poke it!" hint so it doesn't spam during charges
+
 // The fishing game on top of the world:
 //   R          take out / put away the rod or speargun
 //   1 / 2      switch between Fishing Rod and Speargun
@@ -58,6 +63,9 @@ export class Game {
 			new Shark( { scene: app.scene, terrain: app.terrainData, index: 0, homePos: new Vector3( 30, - 8, 115 ) } ),
 			new Shark( { scene: app.scene, terrain: app.terrainData, index: 1, homePos: new Vector3( - 30, - 10, 140 ) } ),
 		];
+		// Sharks stay away (cruising far out) until the diver has landed SHARK_ENGAGE_LANDINGS speared
+		// fish; the counter is reset each time a shark's encounter concludes (see the update loop below).
+		this.speargunLandings = 0;
 
 		this.speargun.onFishHit = ( hit ) => {
 
@@ -107,6 +115,7 @@ export class Game {
 
 			if ( ! landed.stoned ) return;
 			const name = landed.name;
+			this.speargunLandings = ( this.speargunLandings || 0 ) + 1; // counts toward the next shark encounter
 
 			if ( this.app.audio && this.app.audio.fishFlop ) this.app.audio.fishFlop();
 
@@ -494,26 +503,62 @@ export class Game {
 
 		}
 
-		const hasFishInWater = ( p.mode === 'swim' ) && ( !! this.heldSpearFish || !! speargun.spearedFish );
+		// Sharks stay clear until the diver has proven themselves; then just one at a time comes in for
+		// an encounter (circle the float / diver, maybe steal an unattended fish, a few bluff charges,
+		// then either a poke sends it packing or it snatches a held fish) while the rest keep cruising
+		// far off. See src/world/Shark.js for the state machine and its tuning constants.
+		const sharksHungry = ( p.mode === 'swim' ) && ( this.speargunLandings >= SHARK_ENGAGE_LANDINGS );
+		let anyEngaged = this.sharks.some( ( s ) => s.engaged );
+
 		for ( const shark of this.sharks ) {
 
-			shark.update( dt, { playerPos: p.position, playerInWater: p.mode === 'swim', spearedFish: hasFishInWater } );
-			if ( p.mode === 'swim' && hasFishInWater && shark.state === 'stalk' ) {
+			const wasEngaged = shark.engaged;
+			shark.update( dt, {
+				playerPos: p.position,
+				playerInWater: p.mode === 'swim',
+				allowEngage: sharksHungry && ! anyEngaged,
+				floatActive: this.diveFloat.active,
+				floatPos: this.diveFloat.position,
+			} );
 
-				const d = shark.position.distanceTo( p.position );
-				if ( d < 2.0 ) {
+			// An encounter just concluded (poked off, snatched and fled, or gave up): the cooldown for
+			// the next one starts fresh from here.
+			if ( wasEngaged && ! shark.engaged ) this.speargunLandings = 0;
+			if ( ! shark.engaged ) continue;
+			anyEngaged = true; // lock every other shark out of engaging for the rest of this frame
 
-					// Shark snatches fish!
+			// Theft: while circling the float, if the diver has drifted well away, it can grab one fish
+			if ( shark.wantsToSteal && this.diveFloat.stashedFish.length ) {
+
+				const stolen = this.diveFloat.stashedFish.shift();
+				shark.markStolen();
+				const sName = ( FISH[ stolen.species ] || {} ).name || 'fish';
+				this.toast( `A shark tore a ${ sName } from your dive float!`, 3200 );
+
+			}
+
+			// Bluff charges: a brief, throttled heads-up so the player knows to poke it
+			if ( shark.state === 'charge' && this._sharkWarningT <= 0 ) {
+
+				this._sharkWarningT = SHARK_CHARGE_TOAST_S;
+				this.toast( 'Shark! Poke it with [Q] before it gets close!', 2200 );
+
+			}
+
+			// Charges are done: if the diver never poked it off and still has a fish, the shark takes it
+			if ( shark.state === 'snatch' ) {
+
+				const hasFish = !! this.heldSpearFish || !! speargun.spearedFish;
+				if ( hasFish && shark.position.distanceTo( p.position ) < SHARK_SNATCH_RANGE ) {
+
+					const name = this.heldSpearFish ? this.heldSpearFish.name : ( FISH[ speargun.spearedFish?.speciesKey ] || {} ).name || 'fish';
+					if ( this.dropHeldSpearFish ) this.dropHeldSpearFish();
+					this.toast( `A shark snatched your ${ name }! Poke it early next time with [Q]!`, 3500 );
 					shark.snatch();
-					this.toast( this.heldSpearFish
-						? 'A Bronze Whaler snatched your fish! Fend them off next time with [Q]!'
-						: 'A Bronze Whaler snatched the fish off your spear shaft!', 3500 );
-					this.dropHeldSpearFish();
 
-				} else if ( d < 10.0 && this._sharkWarningT <= 0 ) {
+				} else if ( ! hasFish ) {
 
-					this._sharkWarningT = 4.5;
-					this.toast( 'Shark circling close! Poke it with [Q] to fend it off!', 2500 );
+					shark.disengage();
 
 				}
 
@@ -1083,6 +1128,9 @@ export class Game {
 			const name = FISH[ f.species ].name;
 
 			if ( st === 'caught' ) {
+
+				// Count every landed speargun catch toward the next shark encounter
+				this.speargunLandings = ( this.speargunLandings || 0 ) + 1;
 
 				// Fish reeled in! It stays impaled, loaded at the muzzle, until it's stashed
 				if ( au && au.fishSplash ) au.fishSplash( this.speargun.muzzlePos, 0.8 );
