@@ -621,7 +621,7 @@ export class Player {
 		p.addScaledVector( v, dt );
 
 		// walls: push out of the solid boxes you can't step onto (boat frame, axis aligned)
-		for ( let iter = 0; iter < 2; iter ++ ) for ( const c of b.model.colliders ) {
+		for ( let iter = 0; iter < 2; iter ++ ) for ( const c of b.model.colliders || [] ) {
 
 			if ( ! c.solid ) continue;
 			const top = c.center.y + c.half.y, bot = c.center.y - c.half.y;

@@ -178,6 +178,8 @@ export class FishSchools {
 		this.rng = mulberry32( seed );
 		this.time = 0;
 		this.spray = null; // set by the owner (Spray.js): splashes of leaping mullet
+		this.impaled = null; // { index, ... } of the fish currently on the spear, or null
+		this.impaledGroup = null; // the school the impaled fish belongs to (kept visible/exempt from cull)
 		this.group = new THREE.Group();
 		this.group.name = 'Fish';
 		parent.add( this.group );
@@ -711,6 +713,10 @@ export class FishSchools {
 			any = any || g.active;
 
 		}
+
+		// a fish held on the spear stays visible (and gets cull()ed below) no matter how far the diver
+		// has carried it from its home school - on deck, up a ladder, on the pier, anywhere.
+		any = any || !! this.impaled;
 
 		this.mesh.visible = any;
 		if ( ! any ) this.batch.fadeMesh.visible = false;
@@ -1485,18 +1491,23 @@ export class FishSchools {
 		batch.begin();
 		for ( const g of this.groups ) {
 
-			if ( ! g.active ) continue;
+			// the fish riding the spear is exempt from its school's group-level cull: the diver may
+			// have carried it far out of range of the reef (onto the boat, up a ladder, onto the pier)
+			const isImpaledGroup = !! this.impaled && this.impaledGroup === g;
+			if ( ! g.active && ! isImpaledGroup ) continue;
 			const sp = g.sp;
 			// whole group out of range / view
 			const gd = Math.hypot( g.center.x - cp.x, g.center.y - cp.y, g.center.z - cp.z );
-			if ( gd > RANGE + g.radius ) continue;
+			if ( gd > RANGE + g.radius && ! isImpaledGroup ) continue;
 			_sphere.center.copy( g.center );
 			_sphere.radius = g.radius + 2;
-			if ( ! _frustum.intersectsSphere( _sphere ) ) continue;
+			if ( ! _frustum.intersectsSphere( _sphere ) && ! isImpaledGroup ) continue;
 			const turtle = sp.mode === 'turtle', ray = sp.model === 'stingray' || sp.model === 'eagleRay';
 			for ( let a = 0; a < g.count; a ++ ) {
 
 				const i = g.offset + a, i3 = i * 3;
+				// the impaled fish itself is also exempt from the per-fish distance / frustum cull below
+				const isHeld = isImpaledGroup && this.impaled.index === i;
 				const L = this.size[ i ];
 				const x = P[ i3 ], y = P[ i3 + 1 ], z = P[ i3 + 2 ];
 				const vx = V[ i3 ], vy = V[ i3 + 1 ], vz = V[ i3 + 2 ];
@@ -1531,15 +1542,16 @@ export class FishSchools {
 				this.phase[ i ] = ( this.phase[ i ] + dPhase ) % ( TAU * 64 );
 				const amp = rest ? sp.amp * 0.2 : sp.amp * ( 0.55 + 0.45 * Math.min( 2.5, bl / Math.max( 0.2, sp.cruise ) ) + this.panic[ i ] * 0.5 );
 
-				// cull: distance, size on screen and view frustum
+				// cull: distance, size on screen and view frustum (the held fish always draws: it rides
+				// the spear right in front of the camera, on the boat or off it)
 				const dx = x - cp.x, dy = y - cp.y, dz = z - cp.z;
 				const d = Math.sqrt( dx * dx + dy * dy + dz * dz );
-				if ( d > RANGE + L ) continue;
+				if ( d > RANGE + L && ! isHeld ) continue;
 				const px = L * pxScale / Math.max( d, 0.1 );
-				if ( px < 1.2 ) continue;
+				if ( px < 1.2 && ! isHeld ) continue;
 				_sphere.center.set( x, y, z );
 				_sphere.radius = L * 0.7;
-				if ( ! _frustum.intersectsSphere( _sphere ) ) continue;
+				if ( ! _frustum.intersectsSphere( _sphere ) && ! isHeld ) continue;
 
 				// orientation: yaw from the heading, pitch, bank into turns
 				yawPitchRoll( Math.atan2( hx, hz ), - Math.asin( hy ), this.roll[ i ], _q );
@@ -1665,6 +1677,10 @@ export class FishSchools {
 	impaleFish( hitInfo ) {
 
 		this.impaled = hitInfo;
+		// remember which school it came from, so rendering can keep it visible even once the diver
+		// (and the fish riding on the spear) has moved well outside that school's normal cull range -
+		// on the boat, up a ladder, on the pier, anywhere.
+		this.impaledGroup = this.groups.find( ( g ) => hitInfo.index >= g.offset && hitInfo.index < g.offset + g.count ) || null;
 		const i3 = hitInfo.index * 3;
 		this.vel[ i3 ] = 0;
 		this.vel[ i3 + 1 ] = 0;
@@ -1672,12 +1688,14 @@ export class FishSchools {
 
 	}
 
+	// spearPos: world position (muzzle / spear tip) to pin the impaled fish to, above water or below.
 	updateImpaledFish( spearPos, dt ) {
 
 		if ( ! this.impaled ) return;
 		const i = this.impaled.index;
 		const i3 = i * 3;
-		// Pin fish to spear shaft position
+		// Pin fish to spear shaft position - no depth clamp: the catch must ride the spear out of the
+		// water and onto the boat / pier / land exactly like it does underwater.
 		this.pos[ i3 ] = spearPos.x;
 		this.pos[ i3 + 1 ] = spearPos.y;
 		this.pos[ i3 + 2 ] = spearPos.z;
@@ -1695,6 +1713,7 @@ export class FishSchools {
 		// Move old fish out of view
 		this.pos[ i3 + 1 ] = - 2000;
 		this.impaled = null;
+		this.impaledGroup = null;
 
 	}
 
