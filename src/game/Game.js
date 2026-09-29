@@ -24,7 +24,7 @@ const CATCH_CARD_MS = 9000;
 const STONE_SHOT_FRAC = 0.7;
 
 // sharks stay well clear until the diver has landed this many speared fish (reset after each encounter)
-const SHARK_ENGAGE_LANDINGS = 4;
+const SHARK_ENGAGE_LANDINGS = 2;
 const SHARK_SNATCH_RANGE = 2.4; // (m) how close the shark must get to actually snatch a held fish
 const SHARK_CHARGE_TOAST_S = 3.0; // throttle for the "poke it!" hint so it doesn't spam during charges
 
@@ -527,13 +527,12 @@ export class Game {
 			if ( ! shark.engaged ) continue;
 			anyEngaged = true; // lock every other shark out of engaging for the rest of this frame
 
-			// Theft: while circling the float, if the diver has drifted well away, it can grab one fish
+			// Theft: while circling the float, if the diver has drifted well away, it grabs the whole catch
 			if ( shark.wantsToSteal && this.diveFloat.stashedFish.length ) {
 
-				const stolen = this.diveFloat.stashedFish.shift();
+				const n = this.diveFloat.empty().length;
 				shark.markStolen();
-				const sName = ( FISH[ stolen.species ] || {} ).name || 'fish';
-				this.toast( `A shark tore a ${ sName } from your dive float!`, 3200 );
+				this.toast( `A shark tore ${ n } fish from your dive float!`, 3200 );
 
 			}
 
@@ -545,18 +544,20 @@ export class Game {
 
 			}
 
-			// Charges are done: if the diver never poked it off and still has a fish, the shark takes it
+			// Charges are done: if the diver never poked it off, the shark takes the fish held on the
+			// spear AND everything in the dive float
 			if ( shark.state === 'snatch' ) {
 
-				const hasFish = !! this.heldSpearFish || !! speargun.spearedFish;
-				if ( hasFish && shark.position.distanceTo( p.position ) < SHARK_SNATCH_RANGE ) {
+				const hasHeld = !! this.heldSpearFish || !! speargun.spearedFish;
+				const hasFloat = this.diveFloat.stashedFish.length > 0;
+				if ( ( hasHeld || hasFloat ) && shark.position.distanceTo( p.position ) < SHARK_SNATCH_RANGE ) {
 
-					const name = this.heldSpearFish ? this.heldSpearFish.name : ( FISH[ speargun.spearedFish?.speciesKey ] || {} ).name || 'fish';
-					if ( this.dropHeldSpearFish ) this.dropHeldSpearFish();
-					this.toast( `A shark snatched your ${ name }! Poke it early next time with [Q]!`, 3500 );
+					if ( hasHeld && this.dropHeldSpearFish ) this.dropHeldSpearFish();
+					const n = this.diveFloat.empty().length;
+					this.toast( `A shark stole ${ hasHeld ? 'your fish' : '' }${ hasHeld && n ? ' and ' : '' }${ n ? `${ n } fish from your float` : '' }! Poke it early next time with [Q]!`, 3500 );
 					shark.snatch();
 
-				} else if ( ! hasFish ) {
+				} else if ( ! hasHeld && ! hasFloat ) {
 
 					shark.disengage();
 

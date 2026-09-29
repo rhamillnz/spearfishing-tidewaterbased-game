@@ -31,7 +31,7 @@ const MIN_SEABED_HARD = - 2.0; // Shark's MIN_SEABED ( -2.5 ) + the 0.5 m revert
 function step( sharks, world ) {
 
 	let anyEngaged = sharks.some( ( s ) => s.engaged );
-	const sharksHungry = world.player.inWater && world.speargunLandings >= 4;
+	const sharksHungry = world.player.inWater && world.speargunLandings >= 2;
 
 	for ( const shark of sharks ) {
 
@@ -54,7 +54,7 @@ function step( sharks, world ) {
 
 		if ( shark.wantsToSteal && world.float.stashedFish.length ) {
 
-			world.float.stashedFish.shift();
+			world.float.stashedFish.splice( 0 );
 			shark.markStolen();
 			world.thefts ++;
 			world.toasts.push( 'theft' );
@@ -77,7 +77,7 @@ function step( sharks, world ) {
 
 		if ( shark.state === 'snatch' ) {
 
-			const hasFish = !! world.heldSpearFish;
+			const hasFish = !! world.heldSpearFish || world.float.stashedFish.length > 0;
 			if ( hasFish && shark.position.distanceTo( world.player.position ) < 2.4 ) {
 
 				world.heldSpearFish = null;
@@ -130,7 +130,7 @@ const mkSharks = () => [
 	new Shark( { scene, terrain, index: 1, homePos: new Vector3( sx - 60, - 10, sz + 60 ) } ),
 ];
 
-// ---- 1. No engagement before 4 landed fish, even with a shark well within range
+// ---- 1. No engagement before 2 landed fish, even with a shark well within range
 {
 
 	const sharks = mkSharks();
@@ -146,7 +146,7 @@ let poked;
 {
 
 	const sharks = mkSharks();
-	const world = mkWorld( { speargunLandings: 4 } );
+	const world = mkWorld( { speargunLandings: 2 } );
 
 	// drive to engagement
 	let engagedAt = null;
@@ -183,8 +183,8 @@ let poked;
 	// diver drifts far from the float: a theft should occur, and only once
 	world.player.position.set( sx + 40, - 3, sz + 40 );
 	run( sharks, world, 12 );
-	check( world.thefts === 1, `theft: exactly one fish stolen once the diver drifted away (thefts=${ world.thefts })` );
-	check( world.float.stashedFish.length === 1, 'theft: float lost exactly one fish' );
+	check( world.thefts === 1, `theft: the whole float stolen once the diver drifted away (thefts=${ world.thefts })` );
+	check( world.float.stashedFish.length === 0, 'theft: float emptied' );
 	check( shark.stolenFish === true, 'theft: shark marks itself as having stolen already' );
 
 	// keep the diver far away a little longer: still no second theft (well under CIRCLE_TIME_MIN, so
@@ -215,13 +215,13 @@ let poked;
 
 }
 
-// ---- 5a. A poke mid-encounter ends it immediately (fast flee) and re-arms the 4-fish gate
+// ---- 5a. A poke mid-encounter ends it immediately (fast flee) and re-arms the 2-fish gate
 {
 
 	poked.poke();
 	check( poked.state === 'flee', 'poke: shark flees immediately when poked' );
-	const world = mkWorld( { speargunLandings: 4 } ); // landings only reset by the step() loop below
-	world.speargunLandings = 4;
+	const world = mkWorld( { speargunLandings: 2 } ); // landings only reset by the step() loop below
+	world.speargunLandings = 2;
 	const sharks = [ poked ];
 	run( sharks, world, 13 ); // outlasts the poke flee timer
 	check( poked.state === 'cruise' && ! poked.engaged, 'poke: shark returns to harmless cruising after fleeing' );
@@ -232,7 +232,7 @@ let poked;
 {
 
 	const sharks = mkSharks();
-	const world = mkWorld( { speargunLandings: 4, heldSpearFish: { species: 'grunt', kg: 0.9, name: 'Blue Cod' } } );
+	const world = mkWorld( { speargunLandings: 2, heldSpearFish: { species: 'grunt', kg: 0.9, name: 'Blue Cod' } } );
 
 	let shark = null;
 	for ( let t = 0; t < 120 && ! world.snatched; t += dt ) {
@@ -255,7 +255,7 @@ let poked;
 {
 
 	const sharks = mkSharks();
-	const world = mkWorld( { speargunLandings: 4 } );
+	const world = mkWorld( { speargunLandings: 2 } );
 	world.float.active = false;
 
 	let sawCircle = false;
@@ -291,7 +291,7 @@ let poked;
 		},
 	};
 
-	const world = mkWorld( { speargunLandings: 4 } );
+	const world = mkWorld( { speargunLandings: 2 } );
 	world.terrain = ramp;
 	// the diver sits close to the shelf: a chunk of the shark's circling radius would otherwise cross it
 	world.player.position.set( 20, - 3, 0 );
