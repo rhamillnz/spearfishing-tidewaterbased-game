@@ -129,9 +129,9 @@ export class Speargun {
 			this.t = 0;
 			if ( this.audio && this.audio.rodReady ) this.audio.rodReady();
 
-		} else {
+		} else if ( this.state !== 'held' ) {
 
-			if ( this.state !== 'held' ) this.state = 'stowed';
+			this.state = 'stowed';
 			this.gunMesh.visible = false;
 			this.spearMesh.visible = false;
 			this.lineMesh.visible = false;
@@ -266,7 +266,12 @@ export class Speargun {
 
 	update( dt, { visible, aiming = false, fishSchools = null, fight = null } ) {
 
-		if ( ! this.equipped ) {
+		// a fish loaded on the spear stays visible and tracked at the muzzle even once the gun is
+		// stowed (weapon switched away, or the diver's boarded / climbed out somewhere the speargun
+		// can't be drawn): it isn't lost from view until it's actually stashed.
+		if ( this.state === 'held' ) visible = true;
+
+		if ( ! this.equipped && this.state !== 'held' ) {
 
 			this.gunMesh.visible = false;
 			this.spearMesh.visible = false;
